@@ -1,9 +1,12 @@
 import java.io.*;
+import java.nio.file.*;
 import java.util.*;
 
 
 public class MyLang {
 
+    public static int currentLine = 0;
+    public static String currentFile = "interactive";
     public static HashMap<String, HashMap<String, String>> maps = new HashMap<>();
     public static HashMap<String, Boolean> boolVars = new HashMap<>();
     public static HashMap<String, List<List<String>>> nestedLists = new HashMap<>();
@@ -16,6 +19,10 @@ public class MyLang {
     public static HashMap<String, String> functions = new HashMap<>();
     public static Scanner sc = new Scanner(System.in);
     public static boolean running = true;
+    public static int lineNumber = 0;
+    public static boolean debugMode = false;
+    public static String currentCommand = "";
+    public static List<String> errorLog = new ArrayList<>();
 
     // --- Basic Arithmetic Operations ---
     public static int add(int a, int b) { return a + b; }
@@ -28,6 +35,17 @@ public class MyLang {
         }
         return (double) a / b;
     }
+    public static double power(int base, int exp) {return Math.pow(base, exp);}
+    public static double sqrt(int num) {
+        if (num < 0) {
+            System.out.println("Cannot take square root of negative number");
+            return 0;
+        }
+        return Math.sqrt(num);
+    }
+    public static double cbrt(int num) {return Math.cbrt(num);}
+    public static int abs(int num) {return Math.abs(num);}
+
 
     // --- Word-to-Number Conversion ---
     public static String convertWordsToNumbers(String text) {
@@ -50,24 +68,18 @@ public class MyLang {
         input = input.toLowerCase().trim();
         input = convertWordsToNumbers(input);
 
-        if (!input.startsWith("random ") && !input.startsWith("set ") && !input.startsWith("let ") 
-        && !input.startsWith("print ") && !input.startsWith("loop ") && !input.startsWith("if ")) {
-        input = convertWordsToNumbers(input);
-    }
-
-        if (input.startsWith("\\bmake\\b ")) {input = input.replace("\\bmake\\b ", "\\bset\\b ");}
-        if (input.startsWith("\\blist\\b ")) {input = input.replace("\\blist\\b ", " ");}
-        if (input.contains(" \\bto\\b ")) {input = input.replace(" to ", " ");}
-        if (input.contains(" \\bof\\b ")) {input = input.replace(" of ", " ");}
-        if (input.contains("\\bbetween\\b ")) {input = input.replace("\\bbetween\\b ", " ");}
-        if (input.contains("\\bfrom\\b ")) {input = input.replace("\\bfrom\\b ", " ");}
-        if (input.contains("\\bplus\\b")) {input = input.replace("\\bplus\\b", "\\badd\\b");}
-        if (input.contains("\\bwith\\b ")) {input = input.replace(" \\bwith\\b ", " ");}
-        if (input.contains("\\band\\b ")) {input = input.replace(" \\band\\b ", " ");}
-        if (input.contains("\\bbe\\b ")) {input = input.replace(" \\bbe\\b ", " ");}
-        if (input.contains("  ")) {input = input.replace("  ", " ");}
+        input = input.replaceAll("\\bmake\\b", "");
+        input = input.replaceAll("\\blist\\b ", "");
+        input = input.replaceAll(" \\bto\\b ", " ");
+        input = input.replaceAll(" \\bof\\b ", " ");
+        input = input.replaceAll("\\bbetween\\b ", " ");
+        input = input.replaceAll("\\bfrom\\b ", " ");
+        input = input.replaceAll("\\bplus\\b", "add");
+        input = input.replaceAll(" \\bwith\\b ", " ");
+        input = input.replaceAll(" \\band\\b ", " ");
+        input = input.replaceAll(" \\bbe\\b ", " ");
+        input = input.replaceAll("  +", " "); // Multiple spaces to single
         
-
         return input.trim();
     }
 
@@ -76,7 +88,11 @@ public class MyLang {
         if (vars.containsKey(token)) {
             return vars.get(token);
         } else {
-            return Integer.parseInt(token);
+            try {
+                return Integer.parseInt(token);
+            } catch (NumberFormatException e) {
+                throw new NumberFormatException("'" + token + "' is not a number or defined variable");
+            }
         }
     }
 
@@ -87,6 +103,8 @@ public class MyLang {
                                     HashMap<String, String> functions,
                                     HashMap<String, List<String>> functionParams) {
         cmd = cmd.trim();
+        if (cmd.isEmpty()) return "";
+        
         String[] parts = cmd.split(" ");
 
         // === FUNCTION CALL HANDLER ===
@@ -101,7 +119,12 @@ public class MyLang {
             // Map arguments to parameters
             if (params != null && parts.length - 1 >= params.size()) {
                 for (int i = 0; i < params.size(); i++) {
-                    localVars.put(params.get(i), getValue(parts[i + 1], vars));
+                    try {
+                        localVars.put(params.get(i), getValue(parts[i + 1], vars));
+                    } catch (Exception e) {
+                        // If getValue fails, skip this parameter
+                        continue;
+                    }
                 }
             }
 
@@ -140,12 +163,13 @@ public class MyLang {
                 System.out.println(listsNum.get(varName));
                 return listsNum.get(varName).toString();
             } else {
-                // Try parsing as a number
+                // Try parsing as a number ONLY if it looks like a number
                 try {
                     int num = Integer.parseInt(varName);
                     System.out.println(num);
                     return varName;
                 } catch (NumberFormatException e) {
+                    // It's just text - print as-is
                     System.out.println(varName);
                     return varName;
                 }
@@ -154,15 +178,20 @@ public class MyLang {
 
         // === ARITHMETIC HANDLER ===
         if (parts.length == 3) {
-            String op = parts[0];
-            int a = getValue(parts[1], vars);
-            int b = getValue(parts[2], vars);
+            try {
+                String op = parts[0];
+                int a = getValue(parts[1], vars);
+                int b = getValue(parts[2], vars);
 
-            switch (op) {
-                case "add": case "+": return String.valueOf(add(a, b));
-                case "subtract": case "-": return String.valueOf(subtract(a, b));
-                case "multiply": case "*": return String.valueOf(multiply(a, b));
-                case "divide": case "/": return String.valueOf(divide(a, b));
+                switch (op) {
+                    case "add": case "+": return String.valueOf(add(a, b));
+                    case "subtract": case "-": return String.valueOf(subtract(a, b));
+                    case "multiply": case "*": return String.valueOf(multiply(a, b));
+                    case "divide": case "/": return String.valueOf(divide(a, b));
+                }
+            } catch (NumberFormatException e) {
+                // Not a valid arithmetic operation
+                return "";
             }
         }
 
@@ -253,55 +282,82 @@ public class MyLang {
 
     // --- Process Single Command (extracted from main loop) ---
     public static void processCommand(String input,
-                                    HashMap<String, Integer> vars,
-                                    HashMap<String, List<String>> lists,
-                                    HashMap<String, List<Integer>> listsNum,
-                                    HashMap<String, String> functions,
-                                    HashMap<String, List<String>> functionParams,
-                                    HashMap<String, String> stringVars,
-                                    HashMap<String, HashMap<String, String>> maps,
-                                    HashMap<String, List<List<String>>> nestedLists) {
-        
-        // For now, we'll add a simplified version
-        // In a real refactor, you'd move ALL your command handlers here
-        
+                                HashMap<String, Integer> vars,
+                                HashMap<String, List<String>> lists,
+                                HashMap<String, List<Integer>> listsNum,
+                                HashMap<String, String> functions,
+                                HashMap<String, List<String>> functionParams,
+                                HashMap<String, String> stringVars,
+                                HashMap<String, HashMap<String, String>> maps,
+                                HashMap<String, List<List<String>>> nestedLists) {
+    
+        input = normalizeCommand(input);
         String[] parts = input.split(" ");
-        
-        // Example: handle print
-        if (input.startsWith("print ")) {
-            String varName = input.replace("print", "").trim();
-            
-            if (stringVars.containsKey(varName)) {
-                System.out.println(stringVars.get(varName));
-            } else if (vars.containsKey(varName)) {
-                System.out.println(vars.get(varName));
-            } else if (lists.containsKey(varName)) {
-                System.out.println(lists.get(varName));
-            } else {
-                System.out.println(varName);
-            }
+
+        if (input.isEmpty()) return;
+        // PRINT
+        if (input.startsWith("print ") || input.startsWith("say ")) {
+            printNsay(input);
             return;
         }
-        
-        // Example: handle set
-        if (input.startsWith("set ")) {
-            parts = input.replaceFirst("set ", "").split(" ", 2);
-            if (parts.length >= 2) {
-                String varName = parts[0];
-                try {
-                    int value = Integer.parseInt(parts[1]);
-                    vars.put(varName, value);
-                    System.out.println("Variable '" + varName + "' set to " + value);
-                } catch (NumberFormatException e) {
-                    stringVars.put(varName, parts[1]);
-                    System.out.println("String '" + varName + "' set to \"" + parts[1] + "\"");
-                }
-            }
+        // SET/LET
+        if (input.startsWith("set ") || input.startsWith("let ")) {
+            letNset(input);
             return;
         }
-        
-        // Add more command handlers as needed
-        //System.out.println("Command executed: " + input);
+        // IF statements
+        if (input.startsWith("if ")) {
+            ifElse(input);
+            return;
+        }
+        // WHILE loops
+        if (input.startsWith("while ")) {
+            While(input);
+            return;
+        }
+        // FOR loops
+        if (input.startsWith("for ") && input.contains(" in ")) {
+            forLoop(input);
+            return;
+        }
+        // LOOP
+        if (input.startsWith("loop ")) {
+            loop(input);
+            return;
+        }
+        // FUNCTION DEFINITION
+        if (input.startsWith("define ")) {
+            DefineFunc(input);
+            return;
+        } 
+        // FUNCTION CALLS
+        if (functions.containsKey(parts[0])) {
+            funcCall(input);
+            return;
+        }  
+        // LISTS
+        if (input.startsWith("make list ")) {
+            makeList(input);
+            return;
+        }  
+        if (input.startsWith("append ")) {
+            appendList(input);
+            return;
+        } 
+        // MAPS
+        if (input.startsWith("make map ")) {
+            MakeMap(input);
+            return;
+        }     
+        if (input.startsWith("put ")) {
+            Put(input);
+            return;
+        }     
+        // MATH OPERATIONS
+        if (parts.length == 3) {
+            mathCommands(input);
+            return;
+        }
     }
 
     // --- Import Module ---
@@ -616,7 +672,7 @@ public class MyLang {
                         addSubIndex = i;
                         break;
                     }
-                } else if ((c == '*' || c == '/') && i > 0 && mulDivIndex == -1) {
+                } else if ((c == '*' || c == '/' || c == '%') && i > 0 && mulDivIndex == -1) {
                     mulDivIndex = i;
                 }
             }
@@ -643,14 +699,23 @@ public class MyLang {
             int leftVal = evaluateExpression(left, vars);
             int rightVal = evaluateExpression(right, vars);
             
-            if (op == '*') {
-                return leftVal * rightVal;
-            } else {
-                if (rightVal == 0) {
-                    System.out.println("Error: Division by zero");
-                    return 0;
-                }
-                return leftVal / rightVal;
+            switch (op) {
+                case '*':
+                    return leftVal * rightVal;
+                case '/':
+                    if (rightVal == 0) {
+                        System.out.println("Error: Division by zero");
+                        return 0;
+                    }
+                    return leftVal / rightVal;
+                case '%':
+                    if (rightVal == 0) {
+                        System.out.println("Error: Modulo by zero");
+                        return 0;
+                    }
+                    return leftVal % rightVal;
+                default:
+                    break;
             }
         }
         
@@ -878,7 +943,7 @@ public class MyLang {
                 }
     }
 
-    // --- function call ---
+    // --- calls functions ---
     public static void funcCall (String input){
             String[] callParts = input.split(" ");
             String funcName = callParts[0];
@@ -1164,60 +1229,76 @@ public class MyLang {
                         System.out.println("Missing { after condition");
                         break;
                     }
-                    
+
                     String conditionStr = remaining.substring(0, braceStart).trim();
 
-                    // Check for compound conditions
+                    // Check for compound conditions with AND/OR
                     if (conditionStr.contains(" and ") || conditionStr.contains(" or ")) {
-                        String[] conditions = conditionStr.split(" and | or ");
-                        String logic = conditionStr.contains(" and ") ? "and" : "or";
+                        boolean finalResult;
                         
-                        boolean result = true;
-                        
-                        for (String cond : conditions) {
-                            String[] parts = cond.trim().split(" ");
-                            int left = getValue(parts[0], vars);
-                            String op = parts[1];
-                            int right = getValue(parts[2], vars);
+                        // Split by AND or OR
+                        if (conditionStr.contains(" and ")) {
+                            String[] conditions = conditionStr.split(" and ");
+                            finalResult = true; // Start with true for AND
                             
-                            boolean condResult = evaluateCondition(parts[0], parts[1], parts[2], vars, stringVars, boolVars);
+                            for (String cond : conditions) {
+                                cond = cond.trim();
+                                String[] condParts = cond.split(" ");
+                                
+                                if (condParts.length < 3) {
+                                    System.out.println("Invalid condition format: " + cond);
+                                    break;
+                                }
+                                
+                                boolean condResult = evaluateCondition(condParts[0], condParts[1], 
+                                                                    condParts[2], vars, stringVars, boolVars);
+                                finalResult = finalResult && condResult;
+                                
+                                if (!finalResult) break; // Short-circuit evaluation
+                            }
+                        } else { // OR condition
+                            String[] conditions = conditionStr.split(" or ");
+                            finalResult = false; // Start with false for OR
                             
-                            if (logic.equals("and")) {
-                                result = result && condResult;
-                            } else {
-                                result = result || condResult;
+                            for (String cond : conditions) {
+                                cond = cond.trim();
+                                String[] condParts = cond.split(" ");
+                                
+                                if (condParts.length < 3) {
+                                    System.out.println("Invalid condition format: " + cond);
+                                    break;
+                                }
+                                
+                                boolean condResult = evaluateCondition(condParts[0], condParts[1], 
+                                                                    condParts[2], vars, stringVars, boolVars);
+                                finalResult = finalResult || condResult;
+                                
+                                if (finalResult) break; // Short-circuit evaluation
                             }
                         }
+                        
+                        // Find matching closing brace
+                        int braceEnd = findMatchingBrace(remaining, braceStart);
+                        if (braceEnd == -1) {
+                            System.out.println("Missing closing }");
+                            break;
+                        }
+                        
+                        String body = remaining.substring(braceStart + 1, braceEnd).trim();
+                        
+                        if (finalResult) {
+                            executeBlock(body, vars, lists, listsNum, functions, functionParams, stringVars, boolVars);
+                            conditionMet = true;
+                            break;
+                        }
+                        
+                        // Move to next block
+                        remaining = remaining.substring(braceEnd + 1).trim();
+                        continue; // Skip the normal condition evaluation below
                     }
 
+                    // Keep existing single condition code below this
                     String[] condParts = conditionStr.split(" ");
-                    
-                    if (condParts.length < 3) {
-                        System.out.println("Invalid condition format");
-                        break;
-                    }
-
-                    boolean condition = evaluateCondition(condParts[0], condParts[1], condParts[2], vars, stringVars, boolVars);
-                    
-                    
-                    
-                    // Find matching closing brace
-                    int braceEnd = findMatchingBrace(remaining, braceStart);
-                    if (braceEnd == -1) {
-                        System.out.println("Missing closing }");
-                        break;
-                    }
-                    
-                    String body = remaining.substring(braceStart + 1, braceEnd).trim();
-                    
-                    if (condition) {
-                        executeBlock(body, vars, lists, listsNum, functions, functionParams, stringVars, boolVars);
-                        conditionMet = true;
-                        break; // Don't check remaining elif/else
-                    }
-                    
-                    // Move to next block
-                    remaining = remaining.substring(braceEnd + 1).trim();
                 }
     }
 
@@ -1483,163 +1564,176 @@ public class MyLang {
 
 
     // --- while loop ---
-    public static void While (String input){
+    public static void While(String input) {
         String[] parts = input.split(" ", 4);
-                if (parts.length < 4) {
-                    System.out.println("Usage: while <var> <op> <value> { commands }");
-                    return;
+        if (parts.length < 4) {
+            System.out.println("Usage: while <var> <op> <value> { commands }");
+            return;
+        }
+        
+        String varName = parts[1];
+        String operator = parts[2];
+        String rest = input.substring(input.indexOf(operator) + operator.length()).trim();
+        
+        String[] condAndBody = rest.split("\\{", 2);
+        if (condAndBody.length < 2) {
+            System.out.println("Usage: while <condition> { commands }");
+            return;
+        }
+        
+        String compareValueStr = condAndBody[0].trim();
+        String bodyWithBrace = condAndBody[1].trim();
+        
+        boolean isMultiLine = !bodyWithBrace.contains("}");
+        StringBuilder whileBody = new StringBuilder();
+        
+        if (isMultiLine) {
+            System.out.println("While loop started. Type '}' when done.");
+            while (true) {
+                String line = sc.nextLine().trim();
+                if (line.equals("}")) break;
+                whileBody.append(line).append(";");
+            }
+        } else {
+            whileBody.append(bodyWithBrace.substring(0, bodyWithBrace.lastIndexOf("}")));
+        }
+        
+        int maxIterations = 10000;
+        int iterations = 0;
+        boolean shouldBreak = false;
+        
+        while (iterations < maxIterations) {
+            iterations++;
+            
+            if (!vars.containsKey(varName)) {
+                System.out.println("Variable '" + varName + "' not found");
+                break;
+            }
+            
+            int leftValue = vars.get(varName);
+            int rightValue;
+            
+            try {
+                rightValue = getValue(compareValueStr, vars);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid comparison value");
+                break;
+            }
+            
+            boolean condition = switch (operator) {
+                case ">" -> leftValue > rightValue;
+                case "<" -> leftValue < rightValue;
+                case ">=" -> leftValue >= rightValue;
+                case "<=" -> leftValue <= rightValue;
+                case "==" -> leftValue == rightValue;
+                case "!=" -> leftValue != rightValue;
+                default -> {
+                    System.out.println("Unknown operator: " + operator);
+                    yield false;
+                }
+            };
+            
+            if (!condition) break;
+            
+            String[] commands = whileBody.toString().split(";");
+            
+            for (String cmd : commands) {
+                cmd = cmd.trim();
+                if (cmd.isEmpty()) continue;
+                
+                if (cmd.equals("break")) {
+                    shouldBreak = true;
+                    break;
                 }
                 
-                // Parse condition
-                String varName = parts[1];
-                String operator = parts[2];
-                String rest = input.substring(input.indexOf(operator) + operator.length()).trim();
+                if (cmd.equals("continue")) break;
                 
-                // Find where condition ends and body starts
-                String[] condAndBody = rest.split("\\{", 2);
-                if (condAndBody.length < 2) {
-                    System.out.println("Usage: while <condition> { commands }");
-                    return;
+                String normalizedCmd = normalizeCommand(cmd);
+                
+                // ENHANCED: Print with all variable types
+                if (normalizedCmd.startsWith("print ")) {
+                    String printVar = normalizedCmd.replace("print", "").replace("say", "").trim();
+                    
+                    if (boolVars.containsKey(printVar)) {
+                        System.out.println(boolVars.get(printVar));
+                    } else if (maps.containsKey(printVar)) {
+                        System.out.println(maps.get(printVar));
+                    } else if (lists.containsKey(printVar)) {
+                        System.out.println(lists.get(printVar));
+                    } else if (vars.containsKey(printVar)) {
+                        System.out.println(vars.get(printVar));
+                    } else if (nestedLists.containsKey(printVar)) {
+                        System.out.println(nestedLists.get(printVar));
+                    } else if (stringVars.containsKey(printVar)) {
+                        System.out.println(stringVars.get(printVar));
+                    } else {
+                        System.out.println(printVar);
+                    }
                 }
                 
-                String compareValueStr = condAndBody[0].trim();
-                String bodyWithBrace = condAndBody[1].trim();
-                
-                // Check for multi-line or single-line
-                boolean isMultiLine = !bodyWithBrace.contains("}");
-                StringBuilder whileBody = new StringBuilder();
-                
-                if (isMultiLine) {
-                    // Multi-line while loop
-                    System.out.println("While loop started. Type '}' when done.");
-                    while (true) {
-                        String line = sc.nextLine().trim();
-                        if (line.equals("}")) {
-                            break;
+                // FIXED: Set command with expression support
+                else if (normalizedCmd.startsWith("set ")) {
+                    String[] setParts = normalizedCmd.replaceFirst("set ", "").split(" ", 2);
+                    if (setParts.length >= 2) {
+                        String setVarName = setParts[0];
+                        String valueExpr = setParts[1];
+                        
+                        // Check for expressions
+                        if (valueExpr.contains("(") || valueExpr.contains("+") || 
+                            valueExpr.contains("*") || valueExpr.contains("/") ||
+                            (valueExpr.contains("-") && !valueExpr.startsWith("-"))) {
+                            try {
+                                int value = evaluateExpression(valueExpr, vars);
+                                vars.put(setVarName, value);
+                            } catch (Exception e) {
+                                System.out.println("Expression error: " + e.getMessage());
+                            }
+                        } else {
+                            try {
+                                int value = getValue(valueExpr, vars);
+                                vars.put(setVarName, value);
+                            } catch (NumberFormatException e) {
+                                stringVars.put(setVarName, valueExpr);
+                            }
                         }
-                        whileBody.append(line).append(";");
                     }
-                } else {
-                    // Single-line while loop
-                    whileBody.append(bodyWithBrace.substring(0, bodyWithBrace.lastIndexOf("}")));
                 }
                 
-                // Execute while loop
-                int maxIterations = 10000; // Prevent infinite loops
-                int iterations = 0;
-                boolean shouldBreak = false;
-                
-                while (iterations < maxIterations) {
-                    iterations++;
-                    
-                    // Check condition
-                    if (!vars.containsKey(varName)) {
-                        System.out.println("Variable '" + varName + "' not found");
-                        break;
-                    }
-                    
-                    int leftValue = vars.get(varName);
-                    int rightValue;
-                    
+                // Math operations
+                else if (normalizedCmd.split(" ").length == 3) {
+                    String[] mathParts = normalizedCmd.split(" ");
                     try {
-                        rightValue = getValue(compareValueStr, vars);
-                    } catch (NumberFormatException e) {
-                        System.out.println("Invalid comparison value");
-                        break;
-                    }
-                    
-                    boolean condition = switch (operator) {
-                        case ">" -> leftValue > rightValue;
-                        case "<" -> leftValue < rightValue;
-                        case ">=" -> leftValue >= rightValue;
-                        case "<=" -> leftValue <= rightValue;
-                        case "==" -> leftValue == rightValue;
-                        case "!=" -> leftValue != rightValue;
-                        default -> {
-                            System.out.println("Unknown operator: " + operator);
-                            yield false;
-                        }
-                    };
-                    
-                    if (!condition) {
-                        break;
-                    }
-                    
-                    // Execute body commands
-                    String[] commands = whileBody.toString().split(";");
-                    
-                    for (String cmd : commands) {
-                        cmd = cmd.trim();
-                        if (cmd.isEmpty()) continue;
+                        int a = getValue(mathParts[1], vars);
+                        int b = getValue(mathParts[2], vars);
                         
-                        // Check for break
-                        if (cmd.equals("break")) {
-                            shouldBreak = true;
-                            break;
-                        }
+                        int result = switch (mathParts[0]) {
+                            case "add" -> add(a, b);
+                            case "subtract" -> subtract(a, b);
+                            case "multiply" -> multiply(a, b);
+                            case "divide" -> b != 0 ? a / b : 0;
+                            default -> 0;
+                        };
                         
-                        // Check for continue
-                        if (cmd.equals("continue")) {
-                            break; // Break out of command loop, continue while loop
+                        if (vars.containsKey(mathParts[1])) {
+                            vars.put(mathParts[1], result);
                         }
-                        
-                        // Execute command
-                        String normalizedCmd = normalizeCommand(cmd);
-                        
-                        // Handle simple commands inline
-                        if (normalizedCmd.startsWith("print ")) {
-                            String printVar = normalizedCmd.replace("print", "").trim();
-                            if (vars.containsKey(printVar)) {
-                                System.out.println(vars.get(printVar));
-                            } else if (stringVars.containsKey(printVar)) {
-                                System.out.println(stringVars.get(printVar));
-                            } else {
-                                System.out.println(printVar);
-                            }
-                        } else if (normalizedCmd.startsWith("set ")) {
-                            String[] setParts = normalizedCmd.replaceFirst("set ", "").split(" ", 2);
-                            if (setParts.length >= 2) {
-                                String setVarName = setParts[0];
-                                try {
-                                    int value = getValue(setParts[1], vars);
-                                    vars.put(setVarName, value);
-                                } catch (NumberFormatException e) {
-                                    stringVars.put(setVarName, setParts[1]);
-                                }
-                            }
-                        } else if (normalizedCmd.split(" ").length == 3) {
-                            // Math operations
-                            String[] mathParts = normalizedCmd.split(" ");
-                            String op = mathParts[0];
-                            int a = getValue(mathParts[1], vars);
-                            int b = getValue(mathParts[2], vars);
-                            
-                            int result = switch (op) {
-                                case "add" -> add(a, b);
-                                case "subtract" -> subtract(a, b);
-                                case "multiply" -> multiply(a, b);
-                                case "divide" -> b != 0 ? a / b : 0;
-                                default -> 0;
-                            };
-                            
-                            // Auto-assign to first variable if it's a variable name
-                            if (vars.containsKey(mathParts[1])) {
-                                vars.put(mathParts[1], result);
-                            }
-                        }
-                    }
-                    
-                    if (shouldBreak) {
-                        System.out.println("Loop broken at iteration " + iterations);
-                        break;
+                    } catch (Exception e) {
+                        // Ignore
                     }
                 }
-                
-                if (iterations >= maxIterations) {
-                    System.out.println("Warning: Loop stopped after " + maxIterations + " iterations (infinite loop protection)");
-                } else {
-                    System.out.println("While loop completed after " + iterations + " iterations");
-                }
+            }
+            
+            if (shouldBreak) {
+                System.out.println("Loop broken at iteration " + iterations);
+                break;
+            }
+        }
+        
+        if (iterations >= maxIterations) {
+            System.out.println("Warning: Loop stopped after " + maxIterations + " iterations");
+        } else {
+            System.out.println("While loop completed after " + iterations + " iterations");
+        }
     }
 
     // --- get list ---
@@ -1690,16 +1784,16 @@ public class MyLang {
     // --- make num list ---
     public static void makeNumlist(String input){
         String[] parts = input.split(" ");
-                if (parts.length < 4) {
+                if (parts.length < 3) {
                     System.out.println("Usage: make numlist <name> <value1> <value2> ...");
                     return;
                 }
                 
-                String listName = parts[2];
+                String listName = parts[1];
                 List<Integer> numList = new ArrayList<>();
                 
                 try {
-                    for (int i = 3; i < parts.length; i++) {
+                    for (int i = 2; i < parts.length; i++) {
                         numList.add(Integer.parseInt(parts[i]));
                     }
                     listsNum.put(listName, numList);
@@ -2684,6 +2778,39 @@ public class MyLang {
                 }
     }
 
+    // --- Enhanced Error Reporting ---
+    public static void reportError(String errorType, String message, String hint) {
+        System.err.println("╔════════════════════════════════════════╗");
+        System.err.println("║  ERROR: " + errorType);
+        System.err.println("║  Line: " + lineNumber);
+        System.err.println("║  Command: " + currentCommand);
+        System.err.println("║  Message: " + message);
+        if (hint != null && !hint.isEmpty()) {
+            System.err.println("║  💡 Hint: " + hint);
+        }
+        System.err.println("╚════════════════════════════════════════╝");
+        
+        errorLog.add("Line " + lineNumber + ": " + errorType + " - " + message);
+    }
+
+    public static String getErrorHint(Exception e) {
+        String msg = e.getMessage();
+        
+        if (e instanceof NumberFormatException) {
+            return "Expected a number but got text. Check your variable names.";
+        } else if (e instanceof NullPointerException) {
+            return "You're trying to use something that doesn't exist. Did you forget to declare a variable?";
+        } else if (e instanceof IndexOutOfBoundsException) {
+            return "List index is out of range. Check your list size with 'length' command.";
+        } else if (msg != null && msg.contains("not found")) {
+            return "Variable or function not defined. Use 'set' to create variables.";
+        } else if (msg != null && msg.contains("divide") && msg.contains("zero")) {
+            return "Cannot divide by zero. Check your divisor value.";
+        }
+        
+        return "Check the command syntax with 'help'.";
+    }
+
     // --- average ---
     public static void average(String input){
         String listName = input.replace("average ", "").trim();
@@ -3246,22 +3373,23 @@ public class MyLang {
                     int varValue;
                     varName = parts[1]; 
 
-                    if (parts.length == 3) {
-                        varValue = random.nextInt();
-                    } else if (parts.length == 5) {
-                        int min = Integer.parseInt(parts[3]);
-                        int max = Integer.parseInt(parts[4]);
-
-                        if (min >= max) {
-                            System.out.println("Invalid range: min must be less than max");
-                            return;
-                        }
-
-                        varValue = random.nextInt(min, max);
-                    } else {
-                        System.out.println("Invalid syntax. Use: set <var> random [min max]");
+            switch (parts.length) {
+                case 3:
+                    varValue = random.nextInt();
+                    break;
+                case 5:
+                    int min = Integer.parseInt(parts[3]);
+                    int max = Integer.parseInt(parts[4]);
+                    if (min >= max) {
+                        System.out.println("Invalid range: min must be less than max");
                         return;
                     }
+                    varValue = random.nextInt(min, max);
+                    break;
+                default:
+                    System.out.println("Invalid syntax. Use: set <var> random [min max]");
+                    return;
+            }
 
                     vars.put(varName, varValue);
                     System.out.println("Variable '" + varName + "' set to " + varValue);
@@ -3311,33 +3439,43 @@ public class MyLang {
     public static void printNsay(String input){
         String varName = input.replace("print ", "").replace("say ", "").trim();
 
-                if (boolVars.containsKey(varName)) {
-                    System.out.println(boolVars.get(varName));
-                }
-                else if (maps.containsKey(varName)){
-                    System.out.println(maps.get(varName));
-                }
-                else if (lists.containsKey(varName)){
-                    System.out.println(lists.get(varName));
-                }
-                else if (vars.containsKey(varName)) {
-                    System.out.println(vars.get(varName));
-                }
-                else if (nestedLists.containsKey(varName)){
-                    System.out.println(nestedLists.get(varName));
-                }
-                else if (stringVars.containsKey(varName)) {
-                    System.out.println(stringVars.get(varName));
-                }
-                else {
-                    // Try executing as command/function
+        // Check all variable types first
+        if (boolVars.containsKey(varName)) {
+            System.out.println(boolVars.get(varName));
+        }
+        else if (maps.containsKey(varName)){
+            System.out.println(maps.get(varName));
+        }
+        else if (lists.containsKey(varName)){
+            System.out.println(lists.get(varName));
+        }
+        else if (vars.containsKey(varName)) {
+            System.out.println(vars.get(varName));
+        }
+        else if (nestedLists.containsKey(varName)){
+            System.out.println(nestedLists.get(varName));
+        }
+        else if (stringVars.containsKey(varName)) {
+            System.out.println(stringVars.get(varName));
+        }
+        else {
+            // Check if it's a function call (single word that exists as function)
+            String firstWord = varName.split(" ")[0];
+            if (functions.containsKey(firstWord)) {
+                try {
                     String result = executeCommand(varName, vars, lists, listsNum, functions, functionParams);
                     if (result != null && !result.isEmpty()) {
                         System.out.println(result);
-                    } else {
-                        System.out.println(varName);
                     }
+                } catch (Exception e) {
+                    // If function call fails, just print the text
+                    System.out.println(varName);
                 }
+            } else {
+                // It's just plain text - print it as-is
+                System.out.println(varName);
+            }
+        }
     }
 
     // --- toggle ---
@@ -3535,6 +3673,119 @@ public class MyLang {
                 }
     }
 
+    // --- for loops ---
+    public static void forLoop (String input){
+        String[] parts = input.split(" in ", 2);
+        String varName = parts[0].replace("for", "").trim();
+        String rest = parts[1].trim();
+        
+        // FOR RANGE: for i in 0 to 10
+        if (rest.contains(" to ")) {
+            String[] rangeParts = rest.split(" to ");
+            int start = getValue(rangeParts[0].trim(), vars);
+            
+            String endPart = rangeParts[1].trim();
+            int braceIndex = endPart.indexOf("{");
+            int end = getValue(endPart.substring(0, braceIndex).trim(), vars);
+            
+            String body = endPart.substring(braceIndex + 1, endPart.lastIndexOf("}"));
+            
+            for (int i = start; i < end; i++) {
+                vars.put(varName, i);
+                executeBlock(body, vars, lists, listsNum, functions, 
+                            functionParams, stringVars, boolVars);
+            }
+        }
+        // FOR IN LIST: for item in mylist
+        else {
+            String[] restParts = rest.split(" ", 2);
+            String listName = restParts[0].trim();
+            String body = restParts[1].trim();
+            body = body.substring(1, body.lastIndexOf("}"));
+            
+            if (lists.containsKey(listName)) {
+                for (String item : lists.get(listName)) {
+                    stringVars.put(varName, item);
+                    executeBlock(body, vars, lists, listsNum, functions,
+                            functionParams, stringVars, boolVars);
+                }
+            }
+        }
+    }
+
+    // --- do loops ---
+    public static void doLoop(String input){
+        String rest = input.substring(3).trim();
+    
+    // Multi-line
+    if (!rest.contains("}")) {
+        StringBuilder body = new StringBuilder();
+        while (true) {
+            String line = sc.nextLine().trim();
+            if (line.startsWith("while ")) {
+                // Extract condition
+                String condStr = line.replace("while", "").trim();
+                String[] condParts = condStr.split(" ");
+                
+                // Execute body at least once
+                do {
+                    executeBlock(body.toString(), vars, lists, listsNum,
+                               functions, functionParams, stringVars, boolVars);
+                    
+                    boolean condition = evaluateCondition(
+                        condParts[0], condParts[1], condParts[2],
+                        vars, stringVars, boolVars
+                    );
+                    
+                    if (!condition) break;
+                } while (true);
+                break;
+            }
+            body.append(line).append(";");
+            }
+        }
+    }
+
+    // --- Switch ---
+    public static void Switch (String input){
+        String switchVar = input.replace("switch", "").trim();
+        switchVar = switchVar.substring(0, switchVar.indexOf("{")).trim();
+        
+        int switchValue = getValue(switchVar, vars);
+        String body = input.substring(input.indexOf("{") + 1, input.lastIndexOf("}"));
+        
+        String[] cases = body.split("case ");
+        boolean matched = false;
+        
+        for (String caseBlock : cases) {
+            if (caseBlock.trim().isEmpty()) continue;
+            
+            if (caseBlock.startsWith("default")) {
+                if (!matched) {
+                    String defaultBody = caseBlock.substring(caseBlock.indexOf("{") + 1,
+                                                            caseBlock.lastIndexOf("}"));
+                    executeBlock(defaultBody, vars, lists, listsNum, functions,
+                            functionParams, stringVars, boolVars);
+                }
+            } else {
+                String[] caseParts = caseBlock.split("\\{", 2);
+                int caseValue = Integer.parseInt(caseParts[0].trim());
+                
+                if (caseValue == switchValue) {
+                    String caseBody = caseParts[1].substring(0, caseParts[1].lastIndexOf("}"));
+                    executeBlock(caseBody, vars, lists, listsNum, functions,
+                            functionParams, stringVars, boolVars);
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (!matched) {
+            System.out.println("No matching case found");
+        }
+    }
+    
+
     // --- math commands ---
     public static void mathCommands(String input ){
         String[] parts = input.split(" ");
@@ -3555,6 +3806,166 @@ public class MyLang {
                 }
     }
 
+    // --- try / catch ---
+    public static void Try(String input){
+         String rest = input.substring(4).trim();
+                int tryBraceEnd = findMatchingBrace(rest, rest.indexOf("{"));
+                String tryBody = rest.substring(rest.indexOf("{") + 1, tryBraceEnd);
+                
+                String remaining = rest.substring(tryBraceEnd + 1).trim();
+                
+                try {
+                    executeBlock(tryBody, vars, lists, listsNum, functions, functionParams, stringVars, boolVars);
+                } catch (Exception e) {
+                    // Display error FIRST
+                    System.err.println("╔════════════════════════════════════════╗");
+                    System.err.println("║  ERROR at line " + currentLine);
+                    System.err.println("║  File: " + currentFile);
+                    System.err.println("║  Message: " + e.getMessage());
+                    System.err.println("╚════════════════════════════════════════╝");
+                    
+                    if (e.getMessage().contains("not found")) {
+                        System.err.println("Did you forget to declare the variable?");
+                    }
+                    
+                    // THEN execute catch block if present
+                    if (remaining.startsWith("catch")) {
+                        String catchBody = remaining.substring(remaining.indexOf("{") + 1, remaining.lastIndexOf("}"));
+                        stringVars.put("error", e.getMessage());
+                        executeBlock(catchBody, vars, lists, listsNum, functions, functionParams, stringVars, boolVars);
+                    }
+                }
+    }
+
+    // --- to int ---
+    public static void toint (String input){
+        String value = input.replace("toint", "").trim();
+                try {
+                    if (stringVars.containsKey(value)) {
+                        int num = Integer.parseInt(stringVars.get(value));
+                        System.out.println(num);
+                    } else {
+                        int num = Integer.parseInt(value);
+                        System.out.println(num);
+                    }
+                } catch (Exception e) {
+                    System.out.println("Cannot convert to int");
+                }
+    }
+
+    // --- to String ---
+    public static void tostring (String input){
+        String value = input.replace("tostring", "").trim();
+                if (vars.containsKey(value)) {
+                    System.out.println(vars.get(value).toString());
+                } else {
+                    System.out.println(value);
+                }
+    }
+
+    // --- type of ---
+    public static void typeof (String input){
+        String varName = input.replace("typeof", "").trim();
+                
+                if (vars.containsKey(varName)) {
+                    System.out.println("int");
+                } else if (stringVars.containsKey(varName)) {
+                    System.out.println("string");
+                } else if (boolVars.containsKey(varName)) {
+                    System.out.println("boolean");
+                } else if (lists.containsKey(varName)) {
+                    System.out.println("list");
+                } else if (maps.containsKey(varName)) {
+                    System.out.println("map");
+                } else {
+                    System.out.println("undefined");
+                }
+    }
+
+    // --- delete file ---
+    public static void delFile(String input){
+        String filename = input.replace("delete", "").trim();
+                try {
+                    Files.delete(Path.of(filename));
+                    System.out.println("Deleted " + filename);
+                } catch (IOException e) {
+                    System.out.println("Error deleting: " + e.getMessage());
+                }
+    }
+
+    // --- file exists ---
+    public static void fileEx(String input){
+        String filename = input.replace("exists", "").trim();
+        boolean exists = new File(filename).exists();
+        System.out.println(exists);
+    }
+
+    // --- append to file ---
+    public static void appendfile (String input){
+        String[] parts = input.split(" to ");
+                String content = parts[0].replace("append", "").trim();
+                String filename = parts[1].trim();
+                
+                content = content.replace("\"", "");
+                
+                try {
+                    Files.writeString(Path.of(filename), content + "\n",
+                                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+                    System.out.println("Appended to " + filename);
+                } catch (IOException e) {
+                    System.out.println("Error appending: " + e.getMessage());
+                }
+    }
+
+    // --- write file ---
+    public static void writeFile(String input){
+        String[] parts = input.split(" to ");
+                String content = parts[0].replace("write", "").trim();
+                String filename = parts[1].trim();
+                
+                // Remove quotes if present
+                content = content.replace("\"", "");
+                
+                try {
+                    Files.writeString(Path.of(filename), content);
+                    System.out.println("Written to " + filename);
+                } catch (IOException e) {
+                    System.out.println("Error writing file: " + e.getMessage());
+                }
+    }
+
+    // --- read file ---
+    public static void readFile(String input){
+        String filename = input.replace("read", "").trim();
+                try {
+                    String content = Files.readString(Path.of(filename));
+                    System.out.println(content);
+                } catch (IOException e) {
+                    System.out.println("Error reading file: " + e.getMessage());
+                }
+    }
+
+    // Add after sqrt() method
+    public static int floor(double num) {
+        return (int) Math.floor(num);
+    }
+
+    public static int ceiling(double num) {
+        return (int) Math.ceil(num);
+    }
+
+    public static int round(double num) {
+        return (int) Math.round(num);
+    }
+
+    public static int min(int a, int b) {
+        return Math.min(a, b);
+    }
+
+    public static int max(int a, int b) {
+        return Math.max(a, b);
+    }
+
     // --- main program ---
     public static void main(String[] args) {
         
@@ -3568,660 +3979,1114 @@ public class MyLang {
         System.out.println("Welcome to MyLang Programming Language");
         System.out.println("Type 'help' for commands or 'run <file>' to execute a script");
 
+        // In main() method, before the while loop:
+
+        if (args.length > 0) {
+            String scriptFile = args[0];
+            
+            // Store remaining args
+            List<String> scriptArgs = new ArrayList<>();
+            for (int i = 1; i < args.length; i++) {
+                scriptArgs.add(args[i]);
+            }
+            lists.put("args", scriptArgs);
+            
+            // Also store as numbered variables
+            for (int i = 1; i < args.length; i++) {
+                try {
+                    vars.put("$" + i, Integer.parseInt(args[i]));
+                } catch (Exception e) {
+                    stringVars.put("$" + i, args[i]);
+                }
+            }
+            
+            executeScript(scriptFile, vars, lists, listsNum, functions,
+                        functionParams, stringVars, maps, nestedLists);
+            return;
+        }
+
         while (running) {
             System.out.print("> ");
             String input = sc.nextLine().trim();
-            int errorCount = 0;
+            
+            // Update line tracking
+            lineNumber++;
+            currentCommand = input;
 
+            // Skip empty commands
+            if (input.isEmpty()) {
+                continue;
+            }
+
+            // Wrap everything in try-catch
             try {
                 input = normalizeCommand(input);
-            } catch (NumberFormatException e) {
-                System.out.println(" Error: Invalid number format. Please use numeric values or defined variables.");
-                continue;
-            } catch (NullPointerException e) {
-                System.out.println(" Error: You tried to use something that doesn't exist (maybe a missing variable or list).");
-                continue;
-            } catch (Exception e) {
-                errorCount++;
-                System.out.println("⚠ Unexpected error: " + e.getMessage());
-                System.out.println("Total errors so far: " + errorCount);
-                continue;
-            }
-            
-            // --- RUN SCRIPT ---
-            if (input.startsWith("run ") || input.startsWith("script ")) {
-                String filename = input.replace("run ", "").replace("script ", "").trim();
-                
-                // Add .mylang extension if not present
-                if (!filename.endsWith(".mylang")) {
-                    filename += ".mylang";
+
+                if (debugMode) {
+                    System.out.println("[DEBUG] Input: '" + input + "'");
+                    System.out.println("[DEBUG] First word: '" + input.split(" ")[0] + "'");
+                    System.out.println("[DEBUG] Functions available: " + functions.keySet());
+                    System.out.println("[DEBUG] Line " + lineNumber + ": " + input);
+                }
+
+                int errorCount = 0;
+
+                try {
+                    input = normalizeCommand(input);
+                } catch (NumberFormatException e) {
+                    System.out.println(" Error: Invalid number format. Please use numeric values or defined variables.");
+                    continue;
+                } catch (NullPointerException e) {
+                    System.out.println(" Error: You tried to use something that doesn't exist (maybe a missing variable or list).");
+                    continue;
+                } catch (Exception e) {
+                    errorCount++;
+                    System.out.println(" Unexpected error: " + e.getMessage());
+                    System.out.println("Total errors so far: " + errorCount);
+                    continue;
                 }
                 
-                executeScript(filename, vars, lists, listsNum, functions, 
-                            functionParams, stringVars, maps, nestedLists);
+                // --- RUN SCRIPT ---
+                if (input.startsWith("run ") || input.startsWith("script ")) {
+                    String filename = input.replace("run ", "").replace("script ", "").trim();
+                    
+                    // Add .mylang extension if not present
+                    if (!filename.endsWith(".mylang")) {
+                        filename += ".mylang";
+                    }
+                    
+                    executeScript(filename, vars, lists, listsNum, functions, 
+                                functionParams, stringVars, maps, nestedLists);
+                    continue;
+                }
+
+                // --- PAUSE (for debugging scripts) ---
+                if (input.equals("pause")) {
+                    System.out.println("Script paused. Press Enter to continue...");
+                    // In script mode, this would wait for input
+                    // In interactive mode, it just continues
+                    continue;
+                }
+
+                // --- ECHO (print without variable lookup) ---
+                if (input.startsWith("echo ")) {
+                    String message = input.replace("echo ", "");
+                    System.out.println(message);
+                    continue;
+                }
+
+                // --- COMMENT (explicit comment command) ---
+                if (input.startsWith("comment ") || input.startsWith("# ") || input.startsWith("// ")) {
+                    // Skip - it's a comment
+                    continue;
+                }
+
+                // Exit command
+                if (input.equalsIgnoreCase("exit")) {
+                    System.out.println("Goodbye!");
+                    break;
+                }
+
+                if (input.equals("")){
+                    //System.out.println("");
+                    //System.out.println("no command writen !!");
+                    continue;
+                }
+
+                // --- HELP ---
+                if (input.equals("help")) {
+                    System.out.println("Available Commands:");
+                    System.out.println("  set <name> <value>                 - Create or change a variable (number or string)");
+                    System.out.println("  let <name> <value>                 - Alias for 'set'");
+                    System.out.println("  print <name> / say <name>          - Print variable, list, map, or message");
+                    System.out.println("  what is <name>                     - Print value (same as print)");
+                    System.out.println("  what is <op> <a> <b>               - Quick math: add, subtract, multiply, divide");
+                    System.out.println();
+                    System.out.println("  add/subtract/multiply/divide <a> <b> / + - * /   - Perform arithmetic");
+                    System.out.println();
+                    System.out.println("  make list <name> <value1> <value2> ...     - Create string list");
+                    System.out.println("  make numlist <name> <n1> <n2> ...          - Create numeric list");
+                    System.out.println("  make map <name>                            - Create hashmap");
+                    System.out.println("  make nested <name>                         - Create nested list container");
+                    System.out.println();
+                    System.out.println("  append <value> <listname>                  - Add value to end of list");
+                    System.out.println("  remove <value> <listname>                  - Remove first occurrence of value");
+                    System.out.println("  remove index <index> <listname>            - Remove by index");
+                    System.out.println("  clear <listname>                           - Clear all elements in list");
+                    System.out.println("  length <listname>                          - Show list size");
+                    System.out.println();
+                    System.out.println("  get <list> <index>                         - Get element at index (0-based)");
+                    System.out.println("  get <list> <start> to <end>                - Slice list (inclusive start, exclusive end)");
+                    System.out.println("  get <list> <start> to <end> step <n>       - Slice with step");
+                    System.out.println("  slice <list> <start> <end>                 - Print slice");
+                    System.out.println("  set <newList> slice <oldList> <start> <end> - Create new list from slice");
+                    System.out.println();
+                    System.out.println("  sort <listname>                            - Sort ascending");
+                    System.out.println("  sort <listname> desc                       - Sort descending");
+                    System.out.println("  reverse <listname>                         - Reverse list order");
+                    System.out.println("  shuffle <listname>                         - Randomize order");
+                    System.out.println();
+                    System.out.println("  find <value> in <listname>                 - Get first index of value");
+                    System.out.println("  contains list <listname> <value>           - Check if value exists (true/false)");
+                    System.out.println("  count <value> in <listname>                - Count occurrences");
+                    System.out.println("  bsearch <value> in <listname>              - Binary search (requires sorted list)");
+                    System.out.println();
+                    System.out.println("  min <listname>                             - Minimum value");
+                    System.out.println("  max <listname>                             - Maximum value");
+                    System.out.println("  sum <listname>                             - Sum of numeric list");
+                    System.out.println("  average <listname>                         - Average of numeric list");
+                    System.out.println("  unique <listname>                          - Remove duplicates in-place");
+                    System.out.println();
+                    System.out.println("  put <mapname> <key> <value>                - Add/update key in map");
+                    System.out.println("  get map <mapname> <key>                    - Get value by key");
+                    System.out.println("  remove map <key> from <mapname>            - Remove key from map");
+                    System.out.println("  keys <mapname>                             - List all keys");
+                    System.out.println();
+                    System.out.println("  concat <word1> <word2> ...                 - Join strings (removes spaces)");
+                    System.out.println("  upper <text> / lower <text>                - Case conversion");
+                    System.out.println("  replace <text> <old> <new>                 - Replace substring");
+                    System.out.println("  substring <text> <start> <end>             - Extract substring");
+                    System.out.println("  contains word <text> <search>              - Check if substring exists");
+                    System.out.println();
+                    System.out.println("  add sublist <nestname> <v1> <v2> ...       - Add new row to nested list");
+                    System.out.println("  nest <listname> into <nestname>            - Add existing list as row");
+                    System.out.println("  get nested <nest> <row> <col>              - Get cell value");
+                    System.out.println("  get row <nest> <row>                       - Get entire row");
+                    System.out.println("  size nested <nestname>                     - Show rows and columns");
+                    System.out.println("  flatten <nestname>                         - Convert to flat list");
+                    System.out.println("  transpose <nestname>                       - Swap rows and columns");
+                    System.out.println();
+                    System.out.println("  random <var> <min> <max>                   - Assign random integer");
+                    System.out.println("  range <start> <end> [step]                 - Print number sequence");
+                    System.out.println("  set <list> range <start> <end> [step]      - Create numeric list from range");
+                    System.out.println("  repeat <value> <times>                     - Print repeated value");
+                    System.out.println();
+                    System.out.println("  loop <n> <command>                         - Repeat command n times");
+                    System.out.println("  if <a> <op> <b> <command>                  - Conditional: > < == != >= <=");
+                    System.out.println();
+                    System.out.println("  define <name> <p1> <p2> return <cmd>       - Define simple function");
+                    System.out.println("  define <name> { ... }                      - Multi-line function with {}");
+                    System.out.println("  <funcname> <arg1> <arg2>                   - Call function");
+                    System.out.println("  set <var> call <func> <args>               - Call function and store result");
+                    System.out.println();
+                    System.out.println("  save <name> to <file>.txt                  - Save variable/list/map");
+                    System.out.println("  load <file>.txt                            - Load from file");
+                    System.out.println("  run <script>.mylang                        - Run script file");
+                    System.out.println("  exit                                       - Quit program");
+                    System.out.println();
+                    System.out.println("String Functions:");
+                    System.out.println("  trim <text>                    - Remove leading/trailing spaces");
+                    System.out.println("  startswith <text> <prefix>     - Check if starts with prefix");
+                    System.out.println("  endswith <text> <suffix>       - Check if ends with suffix");
+                    System.out.println("  indexof <text> <search>        - Find position of substring (-1 if not found)");
+                    System.out.println("  charat <text> <index>          - Get character at position");
+                    System.out.println();
+                    System.out.println("Advanced Math:");
+                    System.out.println("  power <base> <exp>             - Raise to power");
+                    System.out.println("  sqrt <number>                  - Square root");
+                    System.out.println("  abs <number>                   - Absolute value");
+                    System.out.println("  floor <number>                 - Round down");
+                    System.out.println("  ceil <number>                  - Round up");
+                    System.out.println("  round <number>                 - Round to nearest");
+                    System.out.println("  min <a> <b>                    - Minimum of two");
+                    System.out.println("  max <a> <b>                    - Maximum of two");
+                    System.out.println();
+                    System.out.println("Standard Library:");
+                    System.out.println("  import <module>                - Load stdlib module");
+                    System.out.println("  modules                        - List available modules");
+                    System.out.println("Tips:");
+                    System.out.println("  Use words for numbers: 'five' --> 5");
+                    System.out.println("  Use quotes for strings with spaces: set msg \"hello world\"");
+                    System.out.println("  Lists can hold strings or numbers");
+                    System.out.println("  Maps store key-value pairs");
+                    System.out.println("  Nested lists are 2D tables");
+
+                    continue;
+                }
+
+                // --- IMPORT/USE MODULE ---
+                if (input.startsWith("import ") || input.startsWith("use ")) { 
+                    ImportUse(input);
+                    continue;
+
+                }
+
+                // --- LIST MODULES ---
+                if (input.equals("modules") || input.equals("list modules")) {
+                    ListModual(input);
+                    continue;
+                }
+
+                // --- Import with namespace ---
+                if (input.startsWith("import ") && input.contains(" as ")) {
+                    ImportAs(input);
+                    continue;
+                }
+
+                // --- make HashMap ---
+                if (input.startsWith("map ")){
+                    MakeMap(input);
+                    continue;
+                }
+
+                // --- put (add key to map)---
+                if (input.startsWith("put ")){
+                    Put(input);
+                    continue;
+                }
+
+                // --- DEFINE FUNCTION ---
+                if (input.startsWith("define ")) {
+                    DefineFunc(input);
+                    continue;
+                }
+
+                // --- FUNCTION CALLS ---
+                String[] callParts = input.split(" ");
+                String funcName = callParts[0];
+
+                if (functions.containsKey(funcName)) {
+                    funcCall(input);
+                    continue;
+                }
+
+                // --- keys call ---
+                if (input.startsWith("keys ")) {
+                    Keys(input);
+                    continue;
+                }
+
+
+                // --- CLEAR Command ---
+                if (input.startsWith("clear ")) {
+                    clear(input);
+                    continue;
+                }
+
+                //---remove index ---
+                if (input.startsWith("remove index ")){
+                    removeIndex(input);
+                    continue;
+                }
+
+                // --- SAVE Command ---
+                if (input.startsWith("save ")) {
+                    save(input);
+                    continue;
+                }
+
+                // --- IF / ELIF / ELSE STATEMENT ---
+                if (input.startsWith("if ")) {
+                    ifElse(input);
+                    continue;
+                }
+
+                // --- EVAL (evaluate expression and print result) ---
+                if (input.startsWith("eval ")) {
+                    eval(input);
+                    continue;
+                }
+
+                // --- CALCULATE (alias for eval) ---
+                if (input.startsWith("calc ")) {
+                    calc(input);
+                    continue;
+                }
+
+                // --- LOAD Command ---
+                if (input.startsWith("load ")) {
+                    load(input);
+                    continue;
+                }
+
+                //--- set and call statement---
+                if (input.startsWith("set ") && input.contains(" call ")) {
+                    setCall(input);
+                    continue;
+                }
+
+                // ---remove value---
+                if (input.startsWith("remove list")){
+                    removeList(input);
+                    continue;
+                }
+
+                // --- list lenght ---
+                if (input.startsWith("length list")) {
+                    listLenght(input);
+                    continue;
+                }
+
+                // --- STRING LENGTH ---
+                if (input.startsWith("length ") && !lists.containsKey(input.replace("length ", "").trim())) {
+                    lengthString(input);
+                    continue;
+                }
+
+                // --- lists ---
+                if (input.startsWith("list ")){
+                    makeList(input);
+                    continue;
+                }
+
+                // --- CONCAT (join strings) ---
+                if (input.startsWith("concat ")) {
+                concat(input);
+                continue;
+                }
+
+                // --- UPPER CASE ---
+                if (input.startsWith("upper ")) {
+                    upper(input);
+                    continue;
+                }
+
+                // --- LOWER CASE ---
+                if (input.startsWith("lower ")) {
+                    lower(input);
+                    continue;
+                }
+
+                // --- REPLACE TEXT ---
+                if (input.startsWith("replace ")) {
+                    replace(input);
+                    continue;
+                }
+
+                // --- SUBSTRING (extract part) ---
+                if (input.startsWith("substring ")) {
+                    substring(input);
+                    continue;
+                }
+
+                // --- SPLIT STRING TO LIST ---
+                if (input.startsWith("split ")) {
+                    split(input);
+                    continue;
+                }
+
+                // --- WHILE LOOP ---
+                if (input.startsWith("while ")) {
+                    While(input);
+                    continue;
+                }
+
+                // --- BREAK command (only valid inside loops) ---
+                if (input.equals("break")) {
+                    System.out.println("'break' can only be used inside loops");
+                    continue;
+                }
+
+                // --- CONTINUE command (only valid inside loops) ---
+                if (input.equals("continue")) {
+                    System.out.println("'continue' can only be used inside loops");
+                    continue;
+                }
+
+                // --- get list ---
+                if (input.startsWith("get list")){
+                    getList(input);
+                    continue;
+                }
+
+                // --- get map ---
+                if (input.startsWith("get map")) {
+                    getMap(input);
+                    continue;
+                }
+                
+                // --- CREATE NUMERIC LIST ---
+                if (input.startsWith("numlist ")) {
+                    makeNumlist(input);
+                    continue;
+                }
+
+                // --- BINARY SEARCH (only works on sorted lists) ---
+                if (input.startsWith("bsearch ") && input.contains(" in ")) {
+                    bsearch(input);
+                    continue;
+                }
+
+                // --- SORT LIST (ascending by default) ---
+                if (input.startsWith("sort ")) {
+                    sort(input);
+                    continue;
+                }
+
+                // --- FIND element in list (returns index) ---
+                if (input.startsWith("in list ")) {
+                    findList(input);
+                    continue;
+                }
+
+                // --- RANGE (create list of numbers) ---
+                if (input.startsWith("range ")) {
+                    rangeList(input);
+                    continue;
+                }
+
+                // --- RANGE to variable ---
+                if (input.startsWith("set ") && input.contains(" range ")) {
+                    rangeVar(input);
+                    continue;
+                }
+
+                // --- REPEAT (create list with repeated value) ---
+                if (input.startsWith("repeat ")) {
+                    repeat(input);
+                    continue;
+                }
+
+                // --- FILTER (filter list by condition) ---
+                if (input.startsWith("filter ") && input.contains(" where ")) {
+                    filter(input);
+                    continue;
+                }
+
+                // --- MAP (apply operation to each element) ---
+                if (input.startsWith("map ") && input.contains(" ")) {
+                    map(input);
+                    continue;
+                }
+
+                // --- SAVE FILTERED RESULT ---
+                if (input.startsWith("set ") && input.contains(" filter ") && input.contains(" where ")) {
+                    setFilter(input);
+                    continue;
+                }
+
+                // --- MIN (for two numbers) ---
+                if (input.startsWith("min ") && input.split(" ").length == 3) {
+                    String[] parts = input.split(" ");
+                    try {
+                        int a = getValue(parts[1], vars);
+                        int b = getValue(parts[2], vars);
+                        System.out.println("Result: " + min(a, b));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- MAX (for two numbers) ---
+                if (input.startsWith("max ") && input.split(" ").length == 3) {
+                    String[] parts = input.split(" ");
+                    try {
+                        int a = getValue(parts[1], vars);
+                        int b = getValue(parts[2], vars);
+                        System.out.println("Result: " + max(a, b));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- CONTAINS (check if list contains value) ---
+                if (input.startsWith("contains list ")) {
+                    containsList(input);
+                    continue;
+                }
+
+                // --- CONTAINS STRING (check if text exists) ---
+                if (input.startsWith("contains word")) {
+                    containsWord(input);
+                    continue;
+                }
+
+                // --- MIN (find minimum value) ---
+                if (input.startsWith("min ") && input.length() >= 4) {
+                    Min(input);
+                    continue;
+                }
+
+                // --- MAX (find maximum value) ---
+                if (input.startsWith("max ")&& input.length() >= 4) {
+                    Max(input);
+                    continue;
+                }
+
+                // --- UNIQUE (remove duplicates) ---
+                if (input.startsWith("unique ")) {
+                    unique(input);
+                    continue;
+                }
+
+                // --- UNION (combine two lists, no duplicates) ---
+                if (input.startsWith("union ") && input.contains(" and ")) {
+                    union(input);
+                    continue;
+                }
+
+                // --- INTERSECT (find common elements) ---
+                if (input.startsWith("intersect ") && input.contains(" and ")) {
+                    intersect(input);
+                    continue;
+                }
+
+                // --- DIFFERENCE (elements in list1 but not in list2) ---
+                if (input.startsWith("difference ") && input.contains(" and ")) {
+                    difference(input);
+                    continue;
+                }
+
+                // --- SYMMETRIC DIFFERENCE ---
+                if (input.startsWith("symdiff ") && input.contains(" and ")) {
+                    symdiff(input);
+                    continue;
+                }
+
+                // --- SHUFFLE (randomize order) ---
+                if (input.startsWith("shuffle ")) {
+                    shuffle(input);
+                    continue;
+                }
+
+                // --- DISTINCT (count unique elements) ---
+                if (input.startsWith("distinct ")) {
+                    distinct(input);
+                    continue;
+                }
+
+                // --- COPY list ---
+                if (input.startsWith("copy ") && input.contains(" to ")) {
+                    copyList(input);
+                    continue;
+                }
+
+                // --- MERGE (combine two lists keeping duplicates) ---
+                if (input.startsWith("merge ") && input.contains(" and ")) {
+                    merge(input);
+                    continue;
+                }
+
+                // --- REVERSE list ---
+                if (input.startsWith("reverse ")) {
+                    reverse(input);
+                    continue;
+                }
+
+                // --- COUNT occurrences ---
+                if (input.startsWith("count ") && input.contains(" in ")) {
+                    count(input);
+                    continue;
+                }
+
+                // --- SUM (add all numbers in list) ---
+                if (input.startsWith("sum ")) {
+                    sum(input);
+                    continue;
+                }
+
+                // --- AVERAGE ---
+                if (input.startsWith("average ")) {
+                    average(input);
+                    continue;
+                }
+                
+
+                // --- LIST SLICING with "to" keyword ---
+                if (input.startsWith("get ") && input.contains(" to ")) {
+                    Listslicing(input);
+                    continue;
+                }
+
+                // --- SLICE command (alternative syntax) ---
+                if (input.startsWith("slice ")) {
+                    slice(input);
+                    continue;
+                }
+
+                // --- STORE SLICE to new list ---
+                if (input.startsWith("set ") && input.contains(" slice ")) {
+                    stroeSlice(input);
+                    continue;
+                }
+
+                // --- CREATE NESTED LIST ---
+                if (input.startsWith("nested ")) {
+                    makeNested(input);
+                    continue;
+                }
+
+                // --- ADD SUBLIST to nested list ---
+                if (input.startsWith("add sublist ")) {
+                    sublist(input);
+                    continue;
+                }
+
+                // --- ADD EXISTING LIST to nested list ---
+                if (input.startsWith("nest ")) {
+                    addList(input);
+                    continue;
+                }
+
+                // --- GET NESTED ELEMENT (double index) ---
+                if (input.startsWith("get nested ")) {
+                    getNested(input);
+                    continue;
+                }
+
+                // --- GET ENTIRE ROW ---
+                if (input.startsWith("get row ")) {
+                    getRow(input);
+                    continue;
+                }
+
+                // --- FLATTEN nested list ---
+                if (input.startsWith("flatten ")) {
+                    flatten(input);
+                    continue;
+                }
+
+                // --- SIZE of nested list (rows and columns) ---
+                if (input.startsWith("size nested ")) {
+                    sizeNest(input);
+                    continue;
+                }
+
+                // --- TRANSPOSE (swap rows and columns) ---
+                if (input.startsWith("transpose ")) {
+                    transpose(input);
+                    continue;
+                }
+
+                //--- remove from map ---
+                if (input.startsWith("remove map ") && input.contains(" from ")) {
+                    removeMap(input);
+                    continue;
+                }
+
+
+                // --- append list ---
+                if (input.startsWith("append ")){
+                    appendList(input);
+                    continue;
+                }
+
+                // --- RANDOM ---
+                if (input.startsWith("random ")) {
+                    random(input);
+                    continue;
+                }
+
+                // --- for each ---
+                if (input.startsWith("foreach ")){
+                    foreach(input);
+                    continue;
+                }
+
+                
+                // --- Variable Creation/Update ---
+                if (input.startsWith("let ") || input.startsWith("set ")) {
+                    letNset(input);
+                    continue;
+                }
+
+                // --- PRINT Command ---
+                if (input.startsWith("print ") || input.startsWith("say ")) {
+                    printNsay(input);
+                    continue;
+                }
+
+                // --- TOGGLE (flip boolean) ---
+                if (input.startsWith("toggle ")) {
+                    toggle(input);
+                    continue;
+                }
+
+                // --- NOT (logical negation) ---
+                if (input.startsWith("not ")) {
+                    not(input);
+                    continue;
+                }
+
+                // --- IS TRUE / IS FALSE (check boolean) ---
+                if (input.startsWith("is ") && (input.endsWith(" true") || input.endsWith(" false"))) {
+                    booleancheck(input);
+                    continue;
+                }
+
+                //--- what statment ---
+                if (input.startsWith("what is ")){
+                    whatis(input);
+                    continue;
+                }
+
+                // --- ENHANCED LOOP with break/continue support ---
+                if (input.startsWith("loop ")) {
+                    loop(input);
+                    continue;
+                }
+
+                // --- for loops ---
+                if (input.startsWith("for ") && input.contains(" in ")) {
+                    forLoop(input);
+                    continue;
+                }
+
+                // --- do loop ---
+                if (input.startsWith("do ")) {
+                    doLoop(input);
+                    continue;
+                }
+
+                // --- switch ---
+                if (input.startsWith("switch ")) {
+                    Switch(input);
+                    continue;
+                }
+
+                // --- try/catch ---
+                if (input.startsWith("try ")) {
+                    Try(input);
+                    continue;
+                }
+
+                // --- TO INT ---
+                if (input.startsWith("toint ")) {
+                    toint(input);
+                    continue;
+                }
+
+                // --- TO STRING ---
+                if (input.startsWith("tostring ")) {
+                    tostring(input);
+                    continue;
+                }
+
+                // --- TYPE OF ---
+                if (input.startsWith("typeof ")) {
+                    typeof(input);
+                    continue;
+                }
+
+                // --- READ FILE ---
+                if (input.startsWith("read ")) {
+                    readFile(input);
+                    continue;
+                }
+
+                // --- WRITE FILE ---
+                if (input.startsWith("write ") && input.contains(" to ")) {
+                    writeFile(input);
+                    continue;
+                }
+
+                // --- APPEND TO FILE ---
+                if (input.startsWith("append ") && input.contains(" to ")) {
+                    appendfile(input);
+                    continue;
+                }
+
+                // --- FILE EXISTS ---
+                if (input.startsWith("exists ")) {
+                    fileEx(input);
+                    continue;
+                }
+
+                // --- DELETE FILE ---
+                if (input.startsWith("delete ")) {
+                    delFile(input);
+                    continue;
+                }
+
+                // --- POWER ---
+                if (input.startsWith("power ")) {
+                    String[] parts = input.split(" ");
+                    if (parts.length < 3) {
+                        System.out.println("Usage: power <base> <exponent>");
+                        continue;
+                    }
+                    try {
+                        int base = getValue(parts[1], vars);
+                        int exp = getValue(parts[2], vars);
+                        System.out.println("Result: " + power(base, exp));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- SQUARE ROOT ---
+                if (input.startsWith("sqrt ")) {
+                    String num = input.replace("sqrt", "").trim();
+                    try {
+                        int value = getValue(num, vars);
+                        System.out.println("Result: " + sqrt(value));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- CUBE ROOT ---
+                if (input.startsWith("cbrt ")) {
+                    String num = input.replace("cbrt", "").trim();
+                    try {
+                        int value = getValue(num, vars);
+                        System.out.println("Result: " + cbrt(value));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- ABSOLUTE VALUE ---
+                if (input.startsWith("abs ")) {
+                    String num = input.replace("abs", "").trim();
+                    try {
+                        int value = getValue(num, vars);
+                        System.out.println("Result: " + abs(value));
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    continue;
+                }
+
+                // --- SHOW ERROR LOG ---
+                if (input.equals("errors") || input.equals("error log")) {
+                    if (errorLog.isEmpty()) {
+                        System.out.println("No errors recorded this session.");
+                    } else {
+                        System.out.println("═══ Error Log ═══");
+                        for (int i = 0; i < errorLog.size(); i++) {
+                            System.out.println((i + 1) + ". " + errorLog.get(i));
+                        }
+                    }
+                    continue;
+                }
+
+                // --- CLEAR ERROR LOG ---
+                if (input.equals("clear errors")) {
+                    errorLog.clear();
+                    System.out.println("Error log cleared.");
+                    continue;
+                }
+
+                // --- DEBUG MODE ---
+                if (input.equals("debug on")) {
+                    debugMode = true;
+                    System.out.println("Debug mode enabled");
+                    continue;
+                }
+
+                if (input.equals("debug off")) {
+                    debugMode = false;
+                    System.out.println("Debug mode disabled");
+                    continue;
+                }
+
+                // --- TRIM (remove leading/trailing spaces) ---
+                if (input.startsWith("trim ")) {
+                    String text = input.substring(5).trim(); // Get everything after "trim "
+                    
+                    // Remove quotes if present
+                    if (text.startsWith("\"") && text.endsWith("\"")) {
+                        text = text.substring(1, text.length() - 1);
+                    }
+                    
+                    // Check if it's a variable
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    String trimmed = text.trim();
+                    System.out.println(trimmed);
+                    continue;
+                }
+
+                // --- TRIM and STORE ---
+                if (input.startsWith("set ") && input.contains(" trim ")) {
+                    String[] parts = input.split(" trim ", 2);
+                    String varName = parts[0].replace("set ", "").trim();
+                    String text = parts[1].trim();
+                    
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    String trimmed = text.trim();
+                    stringVars.put(varName, trimmed);
+                    System.out.println("String '" + varName + "' set to \"" + trimmed + "\"");
+                    continue;
+                }
+
+                // --- STARTSWITH (check if string starts with prefix) ---
+                if (input.startsWith("startswith ")) {
+                    String rest = input.substring(11).trim(); // Everything after "startswith "
+                    String[] parts = rest.split(" ", 2);
+                    
+                    if (parts.length < 2) {
+                        System.out.println("Usage: startswith <string> <prefix>");
+                        continue;
+                    }
+                    
+                    String text = parts[0];
+                    String prefix = parts[1];
+                    
+                    // Remove quotes if present
+                    if (text.startsWith("\"") && text.endsWith("\"")) {
+                        text = text.substring(1, text.length() - 1);
+                    }
+                    if (prefix.startsWith("\"") && prefix.endsWith("\"")) {
+                        prefix = prefix.substring(1, prefix.length() - 1);
+                    }
+                    
+                    // Check if it's a variable
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    boolean result = text.startsWith(prefix);
+                    System.out.println(result);
+                    continue;
+                }
+
+                // --- ENDSWITH (check if string ends with suffix) ---
+                if (input.startsWith("endswith ")) {
+                    String[] parts = input.split(" ", 3);
+                    if (parts.length < 3) {
+                        System.out.println("Usage: endswith <string> <suffix>");
+                        continue;
+                    }
+                    
+                    String text = parts[1];
+                    String suffix = parts[2];
+                    
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    boolean result = text.endsWith(suffix);
+                    System.out.println(result);
+                    continue;
+                }
+
+                // --- INDEXOF (find position of substring) ---
+                if (input.startsWith("indexof ")) {
+                    String[] parts = input.split(" ", 3);
+                    if (parts.length < 3) {
+                        System.out.println("Usage: indexof <string> <search>");
+                        continue;
+                    }
+                    
+                    String text = parts[1];
+                    String search = parts[2];
+                    
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    int index = text.indexOf(search);
+                    System.out.println(index);
+                    continue;
+                }
+
+                // --- CHARAT (get character at index) ---
+                if (input.startsWith("charat ")) {
+                    String[] parts = input.split(" ", 3);
+                    if (parts.length < 3) {
+                        System.out.println("Usage: charat <string> <index>");
+                        continue;
+                    }
+                    
+                    String text = parts[1];
+                    
+                    if (stringVars.containsKey(text)) {
+                        text = stringVars.get(text);
+                    }
+                    
+                    try {
+                        int index = Integer.parseInt(parts[2]);
+                        
+                        if (index < 0 || index >= text.length()) {
+                            System.out.println("Index out of range");
+                            continue;
+                        }
+                        
+                        char ch = text.charAt(index);
+                        System.out.println(ch);
+                    } catch (NumberFormatException e) {
+                        System.out.println("Index must be a number");
+                    }
+                    continue;
+                }
+
+                // --- FLOOR ---
+                if (input.startsWith("floor ")) {
+                    String[] parts = input.split(" ");
+                    if (parts.length < 2) {
+                        System.out.println("Usage: floor <number>");
+                        continue;
+                    }
+                    
+                    try {
+                        double value = Double.parseDouble(parts[1]);
+                        System.out.println("Result: " + floor(value));
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid number");
+                    }
+                    continue;
+                }
+
+                // --- CEILING ---
+                if (input.startsWith("ceil ") || input.startsWith("ceiling ")) {
+                    String num = input.replace("ceil ", "").replace("ceiling ", "").trim();
+                    
+                    try {
+                        double value = Double.parseDouble(num);
+                        System.out.println("Result: " + ceiling(value));
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid number");
+                    }
+                    continue;
+                }
+
+                // --- ROUND ---
+                if (input.startsWith("round ")) {
+                    String num = input.replace("round ", "").trim();
+                    
+                    try {
+                        double value = Double.parseDouble(num);
+                        System.out.println("Result: " + round(value));
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid number");
+                    }
+                    continue;
+                }
+
+
+                // --- Math Commands ---
+                String[] parts = input.split(" ");
+                if (parts.length == 3) {
+                    mathCommands(input);
+                    continue;
+                }
+
+                System.out.println("Unknown command");
+
+                
+            } catch (NumberFormatException e) {
+                reportError("Invalid Number", e.getMessage(), 
+                        "Expected a number but got text. Variable: " + e.getMessage());
+                continue;
+            } catch (NullPointerException e) {
+                reportError("Null Reference", "Tried to access undefined variable or list", 
+                        getErrorHint(e));
+                continue;
+            } catch (IndexOutOfBoundsException e) {
+                reportError("Index Error", e.getMessage(), 
+                        "List index out of range. Use 'length <list>' to check size.");
+                continue;
+            } catch (ArithmeticException e) {
+                reportError("Math Error", e.getMessage(), 
+                        "Check for division by zero or invalid math operations.");
+                continue;
+            } catch (Exception e) {
+                reportError("Runtime Error", e.getMessage(), getErrorHint(e));
+                e.printStackTrace(); // For debugging
                 continue;
             }
-
-            // --- PAUSE (for debugging scripts) ---
-            if (input.equals("pause")) {
-                System.out.println("Script paused. Press Enter to continue...");
-                // In script mode, this would wait for input
-                // In interactive mode, it just continues
-                continue;
-            }
-
-            // --- ECHO (print without variable lookup) ---
-            if (input.startsWith("echo ")) {
-                String message = input.replace("echo ", "");
-                System.out.println(message);
-                continue;
-            }
-
-            // --- COMMENT (explicit comment command) ---
-            if (input.startsWith("comment ") || input.startsWith("# ") || input.startsWith("// ")) {
-                // Skip - it's a comment
-                continue;
-            }
-
-            // Exit command
-            if (input.equalsIgnoreCase("exit")) {
-                System.out.println("Goodbye!");
-                break;
-            }
-
-            if (input.equals("")){
-                //System.out.println("");
-                //System.out.println("no command writen !!");
-                continue;
-            }
-
-            // --- HELP ---
-            if (input.equals("help")) {
-                System.out.println("Available Commands:");
-                System.out.println("  set <name> <value>                 - Create or change a variable (number or string)");
-                System.out.println("  let <name> <value>                 - Alias for 'set'");
-                System.out.println("  print <name> / say <name>          - Print variable, list, map, or message");
-                System.out.println("  what is <name>                     - Print value (same as print)");
-                System.out.println("  what is <op> <a> <b>               - Quick math: add, subtract, multiply, divide");
-                System.out.println();
-                System.out.println("  add/subtract/multiply/divide <a> <b> / + - * /   - Perform arithmetic");
-                System.out.println();
-                System.out.println("  make list <name> <value1> <value2> ...     - Create string list");
-                System.out.println("  make numlist <name> <n1> <n2> ...          - Create numeric list");
-                System.out.println("  make map <name>                            - Create hashmap");
-                System.out.println("  make nested <name>                         - Create nested list container");
-                System.out.println();
-                System.out.println("  append <value> <listname>                  - Add value to end of list");
-                System.out.println("  remove <value> <listname>                  - Remove first occurrence of value");
-                System.out.println("  remove index <index> <listname>            - Remove by index");
-                System.out.println("  clear <listname>                           - Clear all elements in list");
-                System.out.println("  length <listname>                          - Show list size");
-                System.out.println();
-                System.out.println("  get <list> <index>                         - Get element at index (0-based)");
-                System.out.println("  get <list> <start> to <end>                - Slice list (inclusive start, exclusive end)");
-                System.out.println("  get <list> <start> to <end> step <n>       - Slice with step");
-                System.out.println("  slice <list> <start> <end>                 - Print slice");
-                System.out.println("  set <newList> slice <oldList> <start> <end> - Create new list from slice");
-                System.out.println();
-                System.out.println("  sort <listname>                            - Sort ascending");
-                System.out.println("  sort <listname> desc                       - Sort descending");
-                System.out.println("  reverse <listname>                         - Reverse list order");
-                System.out.println("  shuffle <listname>                         - Randomize order");
-                System.out.println();
-                System.out.println("  find <value> in <listname>                 - Get first index of value");
-                System.out.println("  contains list <listname> <value>           - Check if value exists (true/false)");
-                System.out.println("  count <value> in <listname>                - Count occurrences");
-                System.out.println("  bsearch <value> in <listname>              - Binary search (requires sorted list)");
-                System.out.println();
-                System.out.println("  min <listname>                             - Minimum value");
-                System.out.println("  max <listname>                             - Maximum value");
-                System.out.println("  sum <listname>                             - Sum of numeric list");
-                System.out.println("  average <listname>                         - Average of numeric list");
-                System.out.println("  unique <listname>                          - Remove duplicates in-place");
-                System.out.println();
-                System.out.println("  put <mapname> <key> <value>                - Add/update key in map");
-                System.out.println("  get map <mapname> <key>                    - Get value by key");
-                System.out.println("  remove map <key> from <mapname>            - Remove key from map");
-                System.out.println("  keys <mapname>                             - List all keys");
-                System.out.println();
-                System.out.println("  concat <word1> <word2> ...                 - Join strings (removes spaces)");
-                System.out.println("  upper <text> / lower <text>                - Case conversion");
-                System.out.println("  replace <text> <old> <new>                 - Replace substring");
-                System.out.println("  substring <text> <start> <end>             - Extract substring");
-                System.out.println("  contains word <text> <search>              - Check if substring exists");
-                System.out.println();
-                System.out.println("  add sublist <nestname> <v1> <v2> ...       - Add new row to nested list");
-                System.out.println("  nest <listname> into <nestname>            - Add existing list as row");
-                System.out.println("  get nested <nest> <row> <col>              - Get cell value");
-                System.out.println("  get row <nest> <row>                       - Get entire row");
-                System.out.println("  size nested <nestname>                     - Show rows and columns");
-                System.out.println("  flatten <nestname>                         - Convert to flat list");
-                System.out.println("  transpose <nestname>                       - Swap rows and columns");
-                System.out.println();
-                System.out.println("  random <var> <min> <max>                   - Assign random integer");
-                System.out.println("  range <start> <end> [step]                 - Print number sequence");
-                System.out.println("  set <list> range <start> <end> [step]      - Create numeric list from range");
-                System.out.println("  repeat <value> <times>                     - Print repeated value");
-                System.out.println();
-                System.out.println("  loop <n> <command>                         - Repeat command n times");
-                System.out.println("  if <a> <op> <b> <command>                  - Conditional: > < == != >= <=");
-                System.out.println();
-                System.out.println("  define <name> <p1> <p2> return <cmd>       - Define simple function");
-                System.out.println("  define <name> { ... }                      - Multi-line function with {}");
-                System.out.println("  <funcname> <arg1> <arg2>                   - Call function");
-                System.out.println("  set <var> call <func> <args>               - Call function and store result");
-                System.out.println();
-                System.out.println("  save <name> to <file>.txt                  - Save variable/list/map");
-                System.out.println("  load <file>.txt                            - Load from file");
-                System.out.println("  run <script>.mylang                        - Run script file");
-                System.out.println("  exit                                       - Quit program");
-                System.out.println();
-                System.out.println("Tips:");
-                System.out.println("  Use words for numbers: 'five' --> 5");
-                System.out.println("  Use quotes for strings with spaces: set msg \"hello world\"");
-                System.out.println("  Lists can hold strings or numbers");
-                System.out.println("  Maps store key-value pairs");
-                System.out.println("  Nested lists are 2D tables");
-                continue;
-            }
-
-            // --- IMPORT/USE MODULE ---
-            if (input.startsWith("import ") || input.startsWith("use ")) { 
-                ImportUse(input);
-                continue;
-
-            }
-
-            // --- LIST MODULES ---
-            if (input.equals("modules") || input.equals("list modules")) {
-                ListModual(input);
-                continue;
-            }
-
-            // --- Import with namespace ---
-            if (input.startsWith("import ") && input.contains(" as ")) {
-                ImportAs(input);
-                continue;
-            }
-
-            // --- make HashMap ---
-            if (input.startsWith("make map")){
-                MakeMap(input);
-                continue;
-            }
-
-            // --- put (add key to map)---
-            if (input.startsWith("put ")){
-                Put(input);
-                continue;
-            }
-
-            // --- DEFINE FUNCTION ---
-            if (input.startsWith("define ")) {
-                DefineFunc(input);
-                continue;
-            }
-
-            // --- FUNCTION CALLS ---
-            String[] callParts = input.split(" ");
-            String funcName = callParts[0];
-
-            if (functions.containsKey(funcName)) {
-                funcCall(input);
-                continue;
-            }
-
-            // --- keys call ---
-            if (input.startsWith("keys ")) {
-                Keys(input);
-                continue;
-            }
-
-
-            // --- CLEAR Command ---
-            if (input.startsWith("clear ")) {
-                clear(input);
-                continue;
-            }
-
-            //---remove index ---
-            if (input.startsWith("remove index ")){
-                removeIndex(input);
-                continue;
-            }
-
-            // --- SAVE Command ---
-            if (input.startsWith("save ")) {
-                save(input);
-                continue;
-            }
-
-            // --- IF / ELIF / ELSE STATEMENT ---
-            if (input.startsWith("if ")) {
-                ifElse(input);
-                continue;
-            }
-
-            // --- EVAL (evaluate expression and print result) ---
-            if (input.startsWith("eval ")) {
-                eval(input);
-                continue;
-            }
-
-            // --- CALCULATE (alias for eval) ---
-            if (input.startsWith("calc ")) {
-                calc(input);
-                continue;
-            }
-
-            // --- LOAD Command ---
-            if (input.startsWith("load ")) {
-                load(input);
-                continue;
-            }
-
-            //--- set and call statement---
-            if (input.startsWith("set ") && input.contains(" call ")) {
-                setCall(input);
-                continue;
-            }
-
-            // ---remove value---
-            if (input.startsWith("remove list")){
-                removeList(input);
-                continue;
-            }
-
-            // --- list lenght ---
-            if (input.startsWith("length list")) {
-                listLenght(input);
-                continue;
-            }
-
-            // --- STRING LENGTH ---
-            if (input.startsWith("length ") && !lists.containsKey(input.replace("length ", "").trim())) {
-                lengthString(input);
-                continue;
-            }
-
-            // --- lists ---
-            if (input.startsWith("make list ")){
-                makeList(input);
-                continue;
-            }
-
-            // --- CONCAT (join strings) ---
-            if (input.startsWith("concat ")) {
-               concat(input);
-               continue;
-            }
-
-            // --- UPPER CASE ---
-            if (input.startsWith("upper ")) {
-                upper(input);
-                continue;
-            }
-
-            // --- LOWER CASE ---
-            if (input.startsWith("lower ")) {
-                lower(input);
-                continue;
-            }
-
-            // --- REPLACE TEXT ---
-            if (input.startsWith("replace ")) {
-                replace(input);
-                continue;
-            }
-
-            // --- SUBSTRING (extract part) ---
-            if (input.startsWith("substring ")) {
-                substring(input);
-                continue;
-            }
-
-            // --- SPLIT STRING TO LIST ---
-            if (input.startsWith("split ")) {
-                split(input);
-                continue;
-            }
-
-            // --- WHILE LOOP ---
-            if (input.startsWith("while ")) {
-                While(input);
-                continue;
-            }
-
-            // --- BREAK command (only valid inside loops) ---
-            if (input.equals("break")) {
-                System.out.println("'break' can only be used inside loops");
-                continue;
-            }
-
-            // --- CONTINUE command (only valid inside loops) ---
-            if (input.equals("continue")) {
-                System.out.println("'continue' can only be used inside loops");
-                continue;
-            }
-
-            // --- get list ---
-            if (input.startsWith("get list")){
-                getList(input);
-                continue;
-            }
-
-            // --- get map ---
-            if (input.startsWith("get map")) {
-                getMap(input);
-                continue;
-            }
-            
-            // --- CREATE NUMERIC LIST ---
-            if (input.startsWith("make numlist ")) {
-                makeNumlist(input);
-                continue;
-            }
-
-            // --- BINARY SEARCH (only works on sorted lists) ---
-            if (input.startsWith("bsearch ") && input.contains(" in ")) {
-                bsearch(input);
-                continue;
-            }
-
-            // --- SORT LIST (ascending by default) ---
-            if (input.startsWith("sort ")) {
-                sort(input);
-                continue;
-            }
-
-            // --- FIND element in list (returns index) ---
-            if (input.startsWith("in list ")) {
-                findList(input);
-                continue;
-            }
-
-            // --- RANGE (create list of numbers) ---
-            if (input.startsWith("range ")) {
-                rangeList(input);
-                continue;
-            }
-
-            // --- RANGE to variable ---
-            if (input.startsWith("set ") && input.contains(" range ")) {
-                rangeVar(input);
-                continue;
-            }
-
-            // --- REPEAT (create list with repeated value) ---
-            if (input.startsWith("repeat ")) {
-                repeat(input);
-                continue;
-            }
-
-            // --- FILTER (filter list by condition) ---
-            if (input.startsWith("filter ") && input.contains(" where ")) {
-                filter(input);
-                continue;
-            }
-
-            // --- MAP (apply operation to each element) ---
-            if (input.startsWith("map ") && input.contains(" ")) {
-                map(input);
-                continue;
-            }
-
-            // --- SAVE FILTERED RESULT ---
-            if (input.startsWith("set ") && input.contains(" filter ") && input.contains(" where ")) {
-                setFilter(input);
-                continue;
-            }
-
-            // --- CONTAINS (check if list contains value) ---
-            if (input.startsWith("contains list ")) {
-                containsList(input);
-                continue;
-            }
-
-            // --- CONTAINS STRING (check if text exists) ---
-            if (input.startsWith("contains word")) {
-                containsWord(input);
-                continue;
-            }
-
-            // --- MIN (find minimum value) ---
-            if (input.startsWith("min ")) {
-                Min(input);
-                continue;
-            }
-
-            // --- MAX (find maximum value) ---
-            if (input.startsWith("max ")) {
-                Max(input);
-                continue;
-            }
-
-            // --- UNIQUE (remove duplicates) ---
-            if (input.startsWith("unique ")) {
-                unique(input);
-                continue;
-            }
-
-            // --- UNION (combine two lists, no duplicates) ---
-            if (input.startsWith("union ") && input.contains(" and ")) {
-                union(input);
-                continue;
-            }
-
-            // --- INTERSECT (find common elements) ---
-            if (input.startsWith("intersect ") && input.contains(" and ")) {
-                intersect(input);
-                continue;
-            }
-
-            // --- DIFFERENCE (elements in list1 but not in list2) ---
-            if (input.startsWith("difference ") && input.contains(" and ")) {
-                difference(input);
-                continue;
-            }
-
-            // --- SYMMETRIC DIFFERENCE ---
-            if (input.startsWith("symdiff ") && input.contains(" and ")) {
-                symdiff(input);
-                continue;
-            }
-
-            // --- SHUFFLE (randomize order) ---
-            if (input.startsWith("shuffle ")) {
-                shuffle(input);
-                continue;
-            }
-
-            // --- DISTINCT (count unique elements) ---
-            if (input.startsWith("distinct ")) {
-                distinct(input);
-                continue;
-            }
-
-            // --- COPY list ---
-            if (input.startsWith("copy ") && input.contains(" to ")) {
-                copyList(input);
-                continue;
-            }
-
-            // --- MERGE (combine two lists keeping duplicates) ---
-            if (input.startsWith("merge ") && input.contains(" and ")) {
-                merge(input);
-                continue;
-            }
-
-            // --- REVERSE list ---
-            if (input.startsWith("reverse ")) {
-                reverse(input);
-                continue;
-            }
-
-            // --- COUNT occurrences ---
-            if (input.startsWith("count ") && input.contains(" in ")) {
-                count(input);
-                continue;
-            }
-
-            // --- SUM (add all numbers in list) ---
-            if (input.startsWith("sum ")) {
-                sum(input);
-                continue;
-            }
-
-            // --- AVERAGE ---
-            if (input.startsWith("average ")) {
-                average(input);
-                continue;
-            }
-            
-
-            // --- LIST SLICING with "to" keyword ---
-            if (input.startsWith("get ") && input.contains(" to ")) {
-                Listslicing(input);
-                continue;
-            }
-
-            // --- SLICE command (alternative syntax) ---
-            if (input.startsWith("slice ")) {
-                slice(input);
-                continue;
-            }
-
-            // --- STORE SLICE to new list ---
-            if (input.startsWith("set ") && input.contains(" slice ")) {
-                stroeSlice(input);
-                continue;
-            }
-
-            // --- CREATE NESTED LIST ---
-            if (input.startsWith("make nested ")) {
-                makeNested(input);
-                continue;
-            }
-
-            // --- ADD SUBLIST to nested list ---
-            if (input.startsWith("add sublist ")) {
-                sublist(input);
-                continue;
-            }
-
-            // --- ADD EXISTING LIST to nested list ---
-            if (input.startsWith("nest ")) {
-                addList(input);
-                continue;
-            }
-
-            // --- GET NESTED ELEMENT (double index) ---
-            if (input.startsWith("get nested ")) {
-                getNested(input);
-                continue;
-            }
-
-            // --- GET ENTIRE ROW ---
-            if (input.startsWith("get row ")) {
-                getRow(input);
-                continue;
-            }
-
-            // --- FLATTEN nested list ---
-            if (input.startsWith("flatten ")) {
-                flatten(input);
-                continue;
-            }
-
-            // --- SIZE of nested list (rows and columns) ---
-            if (input.startsWith("size nested ")) {
-                sizeNest(input);
-                continue;
-            }
-
-            // --- TRANSPOSE (swap rows and columns) ---
-            if (input.startsWith("transpose ")) {
-                transpose(input);
-                continue;
-            }
-
-            //--- remove from map ---
-            if (input.startsWith("remove map ") && input.contains(" from ")) {
-                removeMap(input);
-                continue;
-            }
-
-
-            // --- append list ---
-            if (input.startsWith("append ")){
-                appendList(input);
-                continue;
-            }
-
-            // --- RANDOM ---
-            if (input.startsWith("random ")) {
-                random(input);
-                continue;
-            }
-
-            // --- for each ---
-            if (input.startsWith("foreach ")){
-                foreach(input);
-                continue;
-            }
-
-            
-            // --- Variable Creation/Update ---
-            if (input.startsWith("let ") || input.startsWith("set ")) {
-                letNset(input);
-                continue;
-            }
-
-            // --- PRINT Command ---
-            if (input.startsWith("print ") || input.startsWith("say ")) {
-                printNsay(input);
-                continue;
-            }
-
-            // --- TOGGLE (flip boolean) ---
-            if (input.startsWith("toggle ")) {
-                toggle(input);
-                continue;
-            }
-
-            // --- NOT (logical negation) ---
-            if (input.startsWith("not ")) {
-                not(input);
-                continue;
-            }
-
-            // --- IS TRUE / IS FALSE (check boolean) ---
-            if (input.startsWith("is ") && (input.endsWith(" true") || input.endsWith(" false"))) {
-                booleancheck(input);
-                continue;
-            }
-
-            //--- what statment ---
-            if (input.startsWith("what is ")){
-                whatis(input);
-                continue;
-            }
-
-            // --- ENHANCED LOOP with break/continue support ---
-            if (input.startsWith("loop ")) {
-                loop(input);
-                continue;
-            }
-
-            // --- Math Commands ---
-            String[] parts = input.split(" ");
-            if (parts.length == 3) {
-                mathCommands(input);
-                continue;
-            }
-
-            System.out.println("Unknown command");
-
         }
         sc.close();
     }

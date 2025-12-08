@@ -69,7 +69,7 @@ public class MyLang {
         input = convertWordsToNumbers(input);
 
         input = input.replaceAll("\\bmake\\b", "");
-        input = input.replaceAll("\\blist\\b ", "");
+        //input = input.replaceAll("\\blist\\b ", "");
         input = input.replaceAll(" \\bto\\b ", " ");
         input = input.replaceAll(" \\bof\\b ", " ");
         input = input.replaceAll("\\bbetween\\b ", " ");
@@ -199,87 +199,6 @@ public class MyLang {
         return "";
     }
 
-    // --- Execute Script File ---
-    public static void executeScript(String filename, 
-                                    HashMap<String, Integer> vars,
-                                    HashMap<String, List<String>> lists,
-                                    HashMap<String, List<Integer>> listsNum,
-                                    HashMap<String, String> functions,
-                                    HashMap<String, List<String>> functionParams,
-                                    HashMap<String, String> stringVars,
-                                    HashMap<String, HashMap<String, String>> maps,
-                                    HashMap<String, List<List<String>>> nestedLists) {
-        
-        System.out.println("Running script: " + filename);
-        
-        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
-            String line;
-            int lineNumber = 0;
-            StringBuilder multiLineCommand = new StringBuilder();
-            boolean inMultiLine = false;
-            
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                line = line.trim();
-                
-                // Skip empty lines
-                if (line.isEmpty()) {
-                    System.out.println("");
-                    continue;
-                }
-                
-                // Skip comments
-                if (line.startsWith("#") || line.startsWith("//")) {
-                    continue;
-                }
-                
-                // Handle multi-line function definitions
-                if (line.contains("{") && !line.contains("}")) {
-                    inMultiLine = true;
-                    multiLineCommand.append(line).append(" ");
-                    continue;
-                }
-                
-                if (inMultiLine) {
-                    multiLineCommand.append(line).append(" ");
-                    if (line.contains("}")) {
-                        inMultiLine = false;
-                        line = multiLineCommand.toString();
-                        multiLineCommand = new StringBuilder();
-                    } else {
-                        continue;
-                    }
-                }
-                
-                // Normalize and execute command
-                try {
-                    String normalizedCommand = normalizeCommand(line);
-                    
-                    // Create a temporary scanner for any commands that might need input
-                    // For script mode, we'll skip interactive commands
-                    
-                    // Execute the command (we'll need to refactor main loop logic)
-                    //System.out.println("[Line " + lineNumber + "] > " + line);
-                    
-                    // Process the command (simplified version)
-                    processCommand(normalizedCommand, vars, lists, listsNum, 
-                                functions, functionParams, stringVars, maps, nestedLists);
-                    
-                } catch (Exception e) {
-                    System.err.println("Error at line " + lineNumber + ": " + e.getMessage());
-                    System.err.println("Command: " + line);
-                }
-            }
-            
-            System.out.println("Script completed successfully!");
-            
-        } catch (FileNotFoundException e) {
-            System.out.println("Script file not found: " + filename);
-        } catch (IOException e) {
-            System.out.println("Error reading script: " + e.getMessage());
-        }
-    }
-
     // --- Process Single Command (extracted from main loop) ---
     public static void processCommand(String input,
                                 HashMap<String, Integer> vars,
@@ -357,128 +276,6 @@ public class MyLang {
         if (parts.length == 3) {
             mathCommands(input);
             return;
-        }
-    }
-
-    // --- Import Module ---
-    public static void importModule(String filename,
-                                HashMap<String, Integer> vars,
-                                HashMap<String, List<String>> lists,
-                                HashMap<String, List<Integer>> listsNum,
-                                HashMap<String, String> functions,
-                                HashMap<String, List<String>> functionParams,
-                                HashMap<String, String> stringVars,
-                                HashMap<String, HashMap<String, String>> maps) {
-        
-        // Add .mylang extension if not present
-        if (!filename.endsWith(".mylang")) {
-            filename += ".mylang";
-        }
-        
-        System.out.println("Importing module: " + filename);
-        
-        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
-            String line;
-            int lineNumber = 0;
-            boolean inFunctionDef = false;
-            StringBuilder functionBody = new StringBuilder();
-            String currentFuncName = "";
-            List<String> currentParams = new ArrayList<>();
-            
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                line = line.trim();
-                
-                // Skip empty lines and comments
-                if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
-                    continue;
-                }
-                
-                // Handle function definitions
-                if (line.startsWith("define ")) {
-                    String rest = line.substring(7).trim();
-                    
-                    if (rest.contains("{")) {
-                        String[] parts = rest.split(" ", 2);
-                        currentFuncName = parts[0];
-                        String funcRest = parts[1];
-                        
-                        int braceStart = funcRest.indexOf("{");
-                        int braceEnd = funcRest.lastIndexOf("}");
-                        
-                        // Multi-line function
-                        if (braceStart != -1 && braceEnd == -1) {
-                            inFunctionDef = true;
-                            String paramSection = funcRest.substring(0, braceStart).trim();
-                            
-                            if (!paramSection.isEmpty()) {
-                                currentParams = Arrays.asList(paramSection.split("\\s+"));
-                            } else {
-                                currentParams = new ArrayList<>();
-                            }
-                            continue;
-                        }
-                        // Single-line function
-                        else if (braceStart != -1 && braceEnd != -1) {
-                            String paramSection = funcRest.substring(0, braceStart).trim();
-                            String bodySection = funcRest.substring(braceStart + 1, braceEnd).trim();
-                            
-                            List<String> params = new ArrayList<>();
-                            if (!paramSection.isEmpty()) {
-                                params = Arrays.asList(paramSection.split("\\s+"));
-                            }
-                            
-                            functionParams.put(currentFuncName, params);
-                            functions.put(currentFuncName, bodySection);
-                            System.out.println("  Imported function: " + currentFuncName + " with params " + params);
-                        }
-                    }
-                    continue;
-                }
-                
-                // Handle multi-line function body
-                if (inFunctionDef) {
-                    if (line.equals("}")) {
-                        inFunctionDef = false;
-                        functionParams.put(currentFuncName, currentParams);
-                        functions.put(currentFuncName, functionBody.toString());
-                        System.out.println("  Imported function: " + currentFuncName + " with params " + currentParams);
-                        functionBody = new StringBuilder();
-                        currentFuncName = "";
-                        currentParams = new ArrayList<>();
-                    } else {
-                        functionBody.append(line).append(";");
-                    }
-                    continue;
-                }
-                
-                // Handle variable definitions (that should be imported)
-                if (line.startsWith("export ")) {
-                    String exportLine = line.substring(7).trim();
-                    
-                    if (exportLine.startsWith("set ")) {
-                        String[] parts = exportLine.replaceFirst("set ", "").split(" ", 2);
-                        if (parts.length >= 2) {
-                            String varName = parts[0];
-                            try {
-                                int value = Integer.parseInt(parts[1]);
-                                vars.put(varName, value);
-                                System.out.println("  Imported variable: " + varName + " = " + value);
-                            } catch (NumberFormatException e) {
-                                stringVars.put(varName, parts[1]);
-                                System.out.println("  Imported string: " + varName + " = \"" + parts[1] + "\"");
-                            }
-                        }
-                    }
-                }
-            }
-            
-            System.out.println("Module imported successfully!");
-            
-        } catch (FileNotFoundException e) {
-            System.out.println("Module file not found: " + filename);
-        } catch (IOException e) {
-            System.out.println("Error reading module: " + e.getMessage());
         }
     }
 
@@ -734,74 +531,6 @@ public class MyLang {
             }
         }
         return -1;
-    }
-
-    // ---- import/use module ----
-    public static void ImportUse(String input){
-        String moduleName = input.replace("import ", "").replace("use ", "").trim();
-                
-                // Check standard library first
-                String stdlibPath = "stdlib/" + moduleName;
-                if (fileExists(stdlibPath + ".mylang")) {
-                    importModule(stdlibPath, vars, lists, listsNum, functions, 
-                                functionParams, stringVars, maps);
-                } else if (fileExists(moduleName + ".mylang")) {
-                    importModule(moduleName, vars, lists, listsNum, functions, 
-                                functionParams, stringVars, maps);
-                } else if (fileExists(moduleName)) {
-                    importModule(moduleName, vars, lists, listsNum, functions, 
-                                functionParams, stringVars, maps);
-                } else {
-                    System.out.println("Module not found: " + moduleName);
-                }
-    }
-
-    // --- list modual ---
-    public static void ListModual (String input){
-        System.out.println("Available modules:");
-                
-                // Check stdlib folder
-                File stdlibDir = new File("stdlib");
-                if (stdlibDir.exists() && stdlibDir.isDirectory()) {
-                    File[] modules = stdlibDir.listFiles((dir, name) -> name.endsWith(".mylang"));
-                    if (modules != null && modules.length > 0) {
-                        System.out.println("\nStandard Library:");
-                        for (File module : modules) {
-                            System.out.println("  - " + module.getName().replace(".mylang", ""));
-                        }
-                    }
-                }
-                
-                // Check current directory
-                File currentDir = new File(".");
-                File[] localModules = currentDir.listFiles((dir, name) -> name.endsWith(".mylang"));
-                if (localModules != null && localModules.length > 0) {
-                    System.out.println("\nLocal Modules:");
-                    for (File module : localModules) {
-                        System.out.println("  - " + module.getName().replace(".mylang", ""));
-                    }
-                }
-    }
-
-    // --- import with namepace ---
-    public static void ImportAs (String input){
-        String[] parts = input.split(" as ");
-        String moduleName = parts[0].replace("import ", "").trim();
-        String namespace = parts[1].trim();
-                
-        // Store functions with namespace prefix
-        HashMap<String, String> tempFunctions = new HashMap<>();
-        HashMap<String, List<String>> tempParams = new HashMap<>();
-                
-        importModule(moduleName, vars, lists, listsNum, tempFunctions, tempParams, stringVars, maps);
-                
-        // Add functions with namespace
-        for (Map.Entry<String, String> entry : tempFunctions.entrySet()) {
-            String namespacedName = namespace + "." + entry.getKey();
-            functions.put(namespacedName, entry.getValue());
-            functionParams.put(namespacedName, tempParams.get(entry.getKey()));
-            System.out.println("  Namespaced: " + namespacedName);
-        }
     }
 
     // --- make map ---
@@ -1448,15 +1177,15 @@ public class MyLang {
     public static void makeList (String input){
         input = input.replace("\\bmake\\b ", "");
                 String[] parts = input.split(" ");
-                if (parts.length < 4) {
+                if (parts.length < 3) {
                     System.out.println("Usage: list <name> <values...>");
                     return;
                 }
-                String listName = parts[2].trim();
+                String listName = parts[1].trim();
                 input = input.replaceFirst("list " + listName + " ", "").trim();
                 
                 List<String> listValues = new ArrayList<>();
-                for (int i = 3; i < parts.length; i++) {
+                for (int i = 2; i < parts.length; i++) {
                     listValues.add(String.valueOf(parts[i]));
                 }
                 lists.put(listName, listValues);
@@ -3968,45 +3697,11 @@ public class MyLang {
 
     // --- main program ---
     public static void main(String[] args) {
-        
-        if (args.length > 0) {
-                String scriptFile = args[0];
-                executeScript(scriptFile, vars, lists, listsNum, functions, functionParams, stringVars, maps, nestedLists);
-                return; // Exit after script execution
-            }
-            
         // Interactive mode
         System.out.println("Welcome to MyLang Programming Language");
         System.out.println("Type 'help' for commands or 'run <file>' to execute a script");
 
-        // In main() method, before the while loop:
-
-        if (args.length > 0) {
-            String scriptFile = args[0];
-            
-            // Store remaining args
-            List<String> scriptArgs = new ArrayList<>();
-            for (int i = 1; i < args.length; i++) {
-                scriptArgs.add(args[i]);
-            }
-            lists.put("args", scriptArgs);
-            
-            // Also store as numbered variables
-            for (int i = 1; i < args.length; i++) {
-                try {
-                    vars.put("$" + i, Integer.parseInt(args[i]));
-                } catch (Exception e) {
-                    stringVars.put("$" + i, args[i]);
-                }
-            }
-            
-            executeScript(scriptFile, vars, lists, listsNum, functions,
-                        functionParams, stringVars, maps, nestedLists);
-            return;
-        }
-
         while (running) {
-            System.out.print("> ");
             String input = sc.nextLine().trim();
             
             // Update line tracking
@@ -4045,21 +3740,8 @@ public class MyLang {
                     System.out.println("Total errors so far: " + errorCount);
                     continue;
                 }
-                
-                // --- RUN SCRIPT ---
-                if (input.startsWith("run ") || input.startsWith("script ")) {
-                    String filename = input.replace("run ", "").replace("script ", "").trim();
-                    
-                    // Add .mylang extension if not present
-                    if (!filename.endsWith(".mylang")) {
-                        filename += ".mylang";
-                    }
-                    
-                    executeScript(filename, vars, lists, listsNum, functions, 
-                                functionParams, stringVars, maps, nestedLists);
-                    continue;
-                }
 
+                //System.out.println(input); // (debug input)
                 // --- PAUSE (for debugging scripts) ---
                 if (input.equals("pause")) {
                     System.out.println("Script paused. Press Enter to continue...");
@@ -4191,9 +3873,6 @@ public class MyLang {
                     System.out.println("  min <a> <b>                    - Minimum of two");
                     System.out.println("  max <a> <b>                    - Maximum of two");
                     System.out.println();
-                    System.out.println("Standard Library:");
-                    System.out.println("  import <module>                - Load stdlib module");
-                    System.out.println("  modules                        - List available modules");
                     System.out.println("Tips:");
                     System.out.println("  Use words for numbers: 'five' --> 5");
                     System.out.println("  Use quotes for strings with spaces: set msg \"hello world\"");
@@ -4201,25 +3880,6 @@ public class MyLang {
                     System.out.println("  Maps store key-value pairs");
                     System.out.println("  Nested lists are 2D tables");
 
-                    continue;
-                }
-
-                // --- IMPORT/USE MODULE ---
-                if (input.startsWith("import ") || input.startsWith("use ")) { 
-                    ImportUse(input);
-                    continue;
-
-                }
-
-                // --- LIST MODULES ---
-                if (input.equals("modules") || input.equals("list modules")) {
-                    ListModual(input);
-                    continue;
-                }
-
-                // --- Import with namespace ---
-                if (input.startsWith("import ") && input.contains(" as ")) {
-                    ImportAs(input);
                     continue;
                 }
 
@@ -5051,6 +4711,25 @@ public class MyLang {
                         System.out.println("Result: " + round(value));
                     } catch (NumberFormatException e) {
                         System.out.println("Invalid number");
+                    }
+                    continue;
+                }
+
+                // --- execute file ---
+                if (input.startsWith("exec ")) {
+                    String filename = input.replace("exec ", "").trim();
+                    try {
+                        List<String> lines = Files.readAllLines(Path.of(filename));
+                        for (String line : lines) {
+                            line = line.trim();
+                            if (line.isEmpty() || line.startsWith("#")) continue;
+                            
+                            System.out.println("> " + line);
+                            // Process line as if typed in interactive mode
+                            // (recursively call your main loop logic)
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Error reading file: " + e.getMessage());
                     }
                     continue;
                 }

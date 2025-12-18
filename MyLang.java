@@ -23,6 +23,8 @@ public class MyLang {
     public static boolean debugMode = false;
     public static String currentCommand = "";
     public static List<String> errorLog = new ArrayList<>();
+    public static long operationCount = 0;
+    public static long startTime = 0;
 
     // --- Basic Arithmetic Operations ---
     public static int add(int a, int b) { return a + b; }
@@ -83,17 +85,34 @@ public class MyLang {
         return input.trim();
     }
 
-    // --- Variable Handling ---
+   // Add a simple cache for frequently accessed variables
+    private static final int CACHE_SIZE = 100;
+    private static Map<String, Integer> valueCache = new LinkedHashMap<String, Integer>(CACHE_SIZE, 0.75f, true) {
+        protected boolean removeEldestEntry(Map.Entry eldest) {
+            return size() > CACHE_SIZE;
+        }
+    };
+
     public static int getValue(String token, HashMap<String, Integer> vars) {
+        // Check cache first
+        if (valueCache.containsKey(token)) {
+            return valueCache.get(token);
+        }
+        
+        int value;
         if (vars.containsKey(token)) {
-            return vars.get(token);
+            value = vars.get(token);
         } else {
             try {
-                return Integer.parseInt(token);
+                value = Integer.parseInt(token);
             } catch (NumberFormatException e) {
                 throw new NumberFormatException("'" + token + "' is not a number or defined variable");
             }
         }
+        
+        // Cache the result
+        valueCache.put(token, value);
+        return value;
     }
 
     // --- Execute a single command ---
@@ -1506,7 +1525,6 @@ public class MyLang {
                     } else {
                         System.out.println("Key '" + key + "' not found in " + mapName);
                     }
-                    return;
                 }
     }
 
@@ -2483,28 +2501,35 @@ public class MyLang {
     // --- sum ---
     public static void sum (String input){
         String listName = input.replace("sum ", "").trim();
+            
+            if (listsNum.containsKey(listName)) {
+                List<Integer> list = listsNum.get(listName);
                 
-                if (listsNum.containsKey(listName)) {
-                    List<Integer> list = listsNum.get(listName);
+                // ADD THIS CHECK
+                if (list.isEmpty()) {
+                    System.out.println("Error: Cannot sum an empty list");
+                    return;
+                }
+                
+                int sum = 0;
+                for (int num : list) {
+                    sum += num;
+                }
+                System.out.println("Sum: " + sum);
+            }else if (lists.containsKey(listName)) {
+                List<String> list = lists.get(listName);
+                try {
                     int sum = 0;
-                    for (int num : list) {
-                        sum += num;
+                    for (String s : list) {
+                        sum += Integer.parseInt(s);
                     }
                     System.out.println("Sum: " + sum);
-                } else if (lists.containsKey(listName)) {
-                    List<String> list = lists.get(listName);
-                    try {
-                        int sum = 0;
-                        for (String s : list) {
-                            sum += Integer.parseInt(s);
-                        }
-                        System.out.println("Sum: " + sum);
-                    } catch (NumberFormatException e) {
-                        System.out.println("List contains non-numeric values");
-                    }
-                } else {
-                    System.out.println("List not found");
+                } catch (NumberFormatException e) {
+                    System.out.println("List contains non-numeric values");
                 }
+            } else {
+                System.out.println("List not found");
+            }
     }
 
     // --- Enhanced Error Reporting ---
@@ -2548,7 +2573,7 @@ public class MyLang {
                     List<Integer> list = listsNum.get(listName);
                     
                     if (list.isEmpty()) {
-                        System.out.println("Cannot calculate average of empty list");
+                        System.out.println("Error: Cannot sum an empty list");
                         return;
                     }
                     
@@ -2852,6 +2877,27 @@ public class MyLang {
                 System.out.println("Added list '" + existingListName + "' to nested list '" + nestedListName + "'");
     }
 
+    // --- Input Validation ---
+    public static boolean isValidVariableName(String name) {
+        if (name == null || name.isEmpty()) return false;
+        
+        // Cannot start with number
+        if (Character.isDigit(name.charAt(0))) return false;
+        
+        // Cannot be a keyword
+        String[] keywords = {"if", "else", "elif", "while", "for", "define", 
+                            "return", "break", "continue", "true", "false"};
+        for (String keyword : keywords) {
+            if (name.equals(keyword)) return false;
+        }
+        
+        return true;
+    }
+
+    public static boolean isValidListIndex(int index, int listSize) {
+        return index >= 0 && index < listSize;
+    }
+
     // --- get nested ---
     public static void getNested(String input){
         // Format: get nested listName row column
@@ -3087,14 +3133,21 @@ public class MyLang {
     public static void letNset(String input){
         String[] parts = input.replaceFirst("let |set ", "").split(" ", 2);
 
-                if (parts.length < 2) {
-                    System.out.println("Invalid syntax. Use: set <name> <value>");
-                    return;
-                }
 
-                String varName = parts[0].trim();
-                String valueExpr = parts[1].trim();
+            if (parts.length < 2) {
+                System.out.println("Invalid syntax. Use: set <name> <value>");
+                return;
+            }
 
+            String varName = parts[0].trim();
+            String valueExpr = parts[1].trim();
+
+            // In letNset() method, add at the start:
+            if (!isValidVariableName(varName)) {
+                System.out.println("Error: Invalid variable name '" + varName + "'");
+                System.out.println("Hint: Variable names cannot start with numbers or be keywords");
+                return;
+            }
                 // ---random command---
                 if (input.contains(" random")) {
                     parts = input.split(" ");
@@ -3697,12 +3750,19 @@ public class MyLang {
 
     // --- main program ---
     public static void main(String[] args) {
-        // Interactive mode
-        System.out.println("Welcome to MyLang Programming Language");
-        System.out.println("Type 'help' for commands or 'run <file>' to execute a script");
+        // Beautiful welcome screen
+        System.out.println("╔════════════════════════════════════════╗");
+        System.out.println("║       MyLang Programming Language      ║");
+        System.out.println("║          Version 1.0.0                 ║");
+        System.out.println("╚════════════════════════════════════════╝");
+        System.out.println();
+        System.out.println("Welcome! Type 'help' for commands, 'exit' to quit.");
+        System.out.println("Example: set x 10, print x, make list nums 1 2 3");
+        System.out.println();
 
         while (running) {
             String input = sc.nextLine().trim();
+            startTime = System.currentTimeMillis();
             
             // Update line tracking
             lineNumber++;
@@ -4734,6 +4794,24 @@ public class MyLang {
                     continue;
                 }
 
+                if (input.equals("stats")) {
+                    long uptime = System.currentTimeMillis() - startTime;
+                    System.out.println("═══ MyLang Statistics ═══");
+                    System.out.println("Uptime: " + (uptime / 1000) + " seconds");
+                    System.out.println("Operations: " + operationCount);
+                    System.out.println("Variables: " + vars.size());
+                    System.out.println("Lists: " + lists.size());
+                    System.out.println("Maps: " + maps.size());
+                    System.out.println("Functions: " + functions.size());
+                    continue;
+                }
+
+                if (input.equals("clear stats")) {
+                    operationCount = 0;
+                    startTime = System.currentTimeMillis();
+                    System.out.println("Statistics cleared");
+                    continue;
+                }
 
                 // --- Math Commands ---
                 String[] parts = input.split(" ");

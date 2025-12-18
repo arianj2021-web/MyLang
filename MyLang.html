@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyLang Programming Language v1.0</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: #4b5563;
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            font-size: 13px;
+            color: #c8c8c8;
+        }
+        
+        .button-group {
+            float: right;
+            margin-top: -35px;
+        }
+        
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            margin-left: 10px;
+            transition: all 0.2s;
+        }
+        
+        .btn-clear {
+            background: #646e7d;
+            color: white;
+        }
+        
+        .btn-clear:hover {
+            background: #545d6b;
+        }
+        
+        .btn-help {
+            background: #2563eb;
+            color: white;
+        }
+        
+        .btn-help:hover {
+            background: #1d4ed8;
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow: hidden;
+        }
+        
+        .output-area {
+            flex: 1;
+            background: white;
+            border: 1px solid #c8c8c8;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+        }
+        
+        .welcome {
+            color: #2563eb;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .divider {
+            color: #c8c8c8;
+            margin: 10px 0;
+        }
+        
+        .command {
+            color: #059669;
+            font-weight: bold;
+        }
+        
+        .result {
+            color: #1f2937;
+            margin-left: 10px;
+        }
+        
+        .error {
+            color: #dc2626;
+            font-weight: bold;
+        }
+        
+        .input-panel {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #commandInput {
+            flex: 1;
+            padding: 12px 15px;
+            border: 1px solid #c8c8c8;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        #commandInput:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+        
+        .btn-send {
+            background: #2563eb;
+            color: white;
+            padding: 12px 30px;
+        }
+        
+        .btn-send:hover {
+            background: #1d4ed8;
+        }
+        
+        @media (max-width: 768px) {
+            .button-group {
+                float: none;
+                margin-top: 10px;
+            }
+            
+            .btn {
+                padding: 6px 15px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MyLang Console</h1>
+        <p>Type 'help' for commands</p>
+        <div class="button-group">
+            <button class="btn btn-help" onclick="showHelp()">Help</button>
+            <button class="btn btn-clear" onclick="clearOutput()">Clear</button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div id="output" class="output-area"></div>
+        <div class="input-panel">
+            <input type="text" id="commandInput" placeholder="Enter command..." autocomplete="off">
+            <button class="btn btn-send" onclick="processCommand()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // MyLang Engine State
+        const state = {
+            vars: {},
+            stringVars: {},
+            boolVars: {},
+            lists: {},
+            listsNum: {},
+            maps: {},
+            functions: {},
+            functionParams: {},
+            commandHistory: [],
+            historyIndex: -1
+        };
+
+        // Initialize
+        displayWelcome();
+        
+        document.getElementById('commandInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') processCommand();
+        });
+        
+        document.getElementById('commandInput').addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateHistory(-1);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateHistory(1);
+            }
+        });
+
+        function displayWelcome() {
+            const output = document.getElementById('output');
+            output.innerHTML = `<div class="welcome">╔════════════════════════════════════════╗
+║   MyLang Programming Language v1.0     ║
+╚════════════════════════════════════════╝
+
+Welcome! Type 'help' for available commands.
+</div><div class="divider">─────────────────────────────────────────</div>`;
+        }
+
+        function appendOutput(text, className = '') {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            if (className) div.className = className;
+            div.textContent = text;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+            displayWelcome();
+        }
+
+        function navigateHistory(direction) {
+            if (state.commandHistory.length === 0) return;
+            
+            state.historyIndex += direction;
+            
+            if (state.historyIndex < 0) state.historyIndex = 0;
+            if (state.historyIndex >= state.commandHistory.length) {
+                state.historyIndex = state.commandHistory.length - 1;
+            }
+            
+            if (state.historyIndex >= 0) {
+                document.getElementById('commandInput').value = state.commandHistory[state.historyIndex];
+            }
+        }
+
+        function processCommand() {
+            const input = document.getElementById('commandInput').value.trim();
+            if (!input) return;
+            
+            state.commandHistory.push(input);
+            state.historyIndex = state.commandHistory.length;
+            
+            appendOutput('\n> ' + input, 'command');
+            document.getElementById('commandInput').value = '';
+            
+            try {
+                const result = executeCommand(input);
+                if (result) appendOutput(result, 'result');
+            } catch (error) {
+                appendOutput('⚠ Error: ' + error.message, 'error');
+            }
+            
+            appendOutput('─────────────────────────────────────────', 'divider');
+        }
+
+        function executeCommand(input) {
+            input = normalizeCommand(input);
+            
+            if (input === 'help') return showHelp();
+            if (input === 'exit') return '👋 Thanks for using MyLang! Refresh to restart.';
+            
+            // SET/LET
+            if (input.startsWith('set ') || input.startsWith('let ')) {
+                return setVariable(input);
+            }
+            
+            // PRINT/SAY
+            if (input.startsWith('print ') || input.startsWith('say ')) {
+                return printValue(input);
+            }
+            
+            // WHAT IS
+            if (input.startsWith('what is ')) {
+                return whatIs(input.substring(8));
+            }
+            
+            // MAKE LIST
+            if (input.startsWith('make list ')) {
+                return makeList(input);
+            }
+            
+            // MAKE NUMLIST
+            if (input.startsWith('make numlist ')) {
+                return makeNumlist(input);
+            }
+            
+            // BASIC MATH
+            const parts = input.split(' ');
+            if (parts.length === 3 && ['add', 'subtract', 'multiply', 'divide'].includes(parts[0])) {
+                return doMath(parts);
+            }
+            
+            if (parts.length === 3 && ['+', '-', '*', '/'].includes(parts[1])) {
+                return doMathOperator(parts);
+            }
+            
+            // DEFINE FUNCTION
+            if (input.startsWith('define ')) {
+                return defineFunction(input);
+            }
+            
+            // FUNCTION CALL
+            if (state.functions[parts[0]]) {
+                return callFunction(input);
+            }
+            
+            return '❌ Unknown command: ' + input + '\nType "help" for available commands.';
+        }
+
+        function normalizeCommand(input) {
+            input = input.toLowerCase().trim();
+            input = input.replace(/\b(to|of|between|from|with|and|be)\b/g, '');
+            input = input.replace(/\bplus\b/g, 'add');
+            input = input.replace(/  +/g, ' ');
+            return input.trim();
+        }
+
+        function getValue(token) {
+            if (state.vars[token] !== undefined) return state.vars[token];
+            const num = parseInt(token);
+            if (isNaN(num)) throw new Error('Invalid value: ' + token);
+            return num;
+        }
+
+        function setVariable(input) {
+            const parts = input.replace(/^(let|set) /, '').split(' ');
+            if (parts.length < 2) return '❌ Usage: set <name> <value>';
+            
+            const name = parts[0];
+            const value = parts.slice(1).join(' ');
+            
+            if (value === 'true' || value === 'false') {
+                state.boolVars[name] = value === 'true';
+                return `✓ Boolean '${name}' = ${value}`;
+            }
+            
+            const num = parseInt(value);
+            if (!isNaN(num)) {
+                state.vars[name] = num;
+                return `✓ Variable '${name}' = ${num}`;
+            }
+            
+            state.stringVars[name] = value;
+            return `✓ String '${name}' = "${value}"`;
+        }
+
+        function printValue(input) {
+            const name = input.replace(/^(print|say) /, '');
+            
+            if (state.vars[name] !== undefined) return '  ' + state.vars[name];
+            if (state.stringVars[name] !== undefined) return '  ' + state.stringVars[name];
+            if (state.boolVars[name] !== undefined) return '  ' + state.boolVars[name];
+            if (state.lists[name]) return '  ' + JSON.stringify(state.lists[name]);
+            if (state.listsNum[name]) return '  ' + JSON.stringify(state.listsNum[name]);
+            
+            return '  ' + name;
+        }
+
+        function whatIs(input) {
+            const parts = input.split(' ');
+            
+            if (parts.length === 3 && ['+', '-', '*', '/'].includes(parts[1])) {
+                return doMathOperator(parts);
+            }
+            
+            if (state.vars[input] !== undefined) return '  ' + state.vars[input];
+            if (state.stringVars[input]) return '  ' + state.stringVars[input];
+            if (state.boolVars[input] !== undefined) return '  ' + state.boolVars[input];
+            
+            return '  ' + input;
+        }
+
+        function makeList(input) {
+            const parts = input.split(' ');
+            if (parts.length < 4) return '❌ Usage: make list <name> <values...>';
+            
+            const name = parts[2];
+            const values = parts.slice(3);
+            state.lists[name] = values;
+            
+            return `✓ List '${name}' created: [${values.join(', ')}]`;
+        }
+
+        function makeNumlist(input) {
+            const parts = input.split(' ');
+            if (parts.length < 4) return '❌ Usage: make numlist <name> <numbers...>';
+            
+            const name = parts[2];
+            const values = parts.slice(3).map(v => {
+                const num = parseInt(v);
+                if (isNaN(num)) throw new Error('All values must be numbers');
+                return num;
+            });
+            
+            state.listsNum[name] = values;
+            return `✓ Numeric list '${name}' created: [${values.join(', ')}]`;
+        }
+
+        function doMath(parts) {
+            const a = getValue(parts[1]);
+            const b = getValue(parts[2]);
+            let result;
+            
+            switch(parts[0]) {
+                case 'add': result = a + b; break;
+                case 'subtract': result = a - b; break;
+                case 'multiply': result = a * b; break;
+                case 'divide':
+                    if (b === 0) return '❌ Cannot divide by zero';
+                    result = Math.floor(a / b);
+                    break;
+            }
+            
+            return `  Result: ${result}`;
+        }
+
+        function doMathOperator(parts) {
+            const a = getValue(parts[0]);
+            const b = getValue(parts[2]);
+            let result;
+            
+            switch(parts[1]) {
+                case '+': result = a + b; break;
+                case '-': result = a - b; break;
+                case '*': result = a * b; break;
+                case '/':
+                    if (b === 0) return '❌ Cannot divide by zero';
+                    result = Math.floor(a / b);
+                    break;
+            }
+            
+            return `  Result: ${result}`;
+        }
+
+        function defineFunction(input) {
+            const rest = input.substring(7).trim();
+            
+            if (rest.includes('{')) {
+                const parts = rest.split(' ', 2);
+                if (parts.length < 2) return '❌ Usage: define <name> <params> {body}';
+                
+                const name = parts[0];
+                const funcRest = parts[1];
+                const braceStart = funcRest.indexOf('{');
+                const braceEnd = funcRest.lastIndexOf('}');
+                
+                if (braceStart !== -1 && braceEnd !== -1) {
+                    const paramSection = funcRest.substring(0, braceStart).trim();
+                    const bodySection = funcRest.substring(braceStart + 1, braceEnd).trim();
+                    
+                    const params = paramSection ? paramSection.split(/\s+/) : [];
+                    state.functionParams[name] = params;
+                    state.functions[name] = bodySection;
+                    
+                    return `✓ Function '${name}' defined with params [${params.join(', ')}]`;
+                }
+            } else {
+                const tokens = rest.split(' ');
+                if (tokens.length < 3) return '❌ Usage: define <name> <params> return <command>';
+                
+                const name = tokens[0];
+                const params = [];
+                let body = '';
+                let foundReturn = false;
+                
+                for (let i = 1; i < tokens.length; i++) {
+                    if (tokens[i] === 'return') {
+                        foundReturn = true;
+                        body = tokens.slice(i + 1).join(' ');
+                        break;
+                    }
+                    if (!foundReturn) params.push(tokens[i]);
+                }
+                
+                state.functionParams[name] = params;
+                state.functions[name] = 'return ' + body;
+                
+                return `✓ Function '${name}' defined with params [${params.join(', ')}]`;
+            }
+            
+            return '❌ Invalid function syntax';
+        }
+
+        function callFunction(input) {
+            const parts = input.split(' ');
+            const name = parts[0];
+            let body = state.functions[name];
+            const params = state.functionParams[name] || [];
+            
+            // Replace parameters
+            for (let i = 0; i < params.length; i++) {
+                if (parts[i + 1]) {
+                    body = body.replace(new RegExp('\\b' + params[i] + '\\b', 'g'), parts[i + 1]);
+                }
+            }
+            
+            if (body.startsWith('return ')) {
+                const expr = body.substring(7).trim();
+                const exprParts = expr.split(' ');
+                
+                if (exprParts.length === 3 && ['add', 'subtract', 'multiply', 'divide'].includes(exprParts[0])) {
+                    const result = doMath(exprParts);
+                    return '  Returned: ' + result.substring(10);
+                }
+                
+                return '  Returned: ' + expr;
+            } else {
+                const lines = body.split(';');
+                let output = '';
+                for (const line of lines) {
+                    if (line.trim()) {
+                        output += executeCommand(line.trim()) + '\n';
+                    }
+                }
+                return output;
+            }
+        }
+
+        function showHelp() {
+            return `📖 MyLang Commands Reference:
+
+VARIABLES & I/O:
+  set <name> <value>     - Create variable
+  print <name>           - Display value
+  what is <name>         - Query value
+
+MATH:
+  add/subtract/multiply/divide <a> <b>
+  <a> + <b>              - Addition
+  <a> - <b>              - Subtraction
+  <a> * <b>              - Multiplication
+  <a> / <b>              - Division
+
+LISTS:
+  make list <name> <values>    - String list
+  make numlist <name> <nums>   - Number list
+
+FUNCTIONS:
+  define <name> <params> return <expr>
+  define <name> <params> {body}
+  <funcname> <args>      - Call function
+
+EXAMPLES:
+  set x 10
+  what is x + 5
+  make list names alice bob
+  define square x return multiply x x
+  square 7
+
+SYSTEM:
+  help                   - Show this help
+  exit                   - Exit message
+
+💡 Use arrow keys (↑↓) for command history
+💡 iPad compatible - works on all devices!`;
+        }
+    </script>
+</body>
+</html>
